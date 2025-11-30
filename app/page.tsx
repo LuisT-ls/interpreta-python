@@ -26,6 +26,7 @@ export default function Home() {
 
   const [isExecuting, setIsExecuting] = useState(false)
   const outputBufferRef = useRef<string[]>([])
+  const executionAbortedRef = useRef(false)
   
   // Estados para controle de input inline no terminal
   const [isWaitingInput, setIsWaitingInput] = useState(false)
@@ -105,9 +106,67 @@ export default function Home() {
     event.target.value = ''
   }
 
+  const stopExecution = useCallback(() => {
+    executionAbortedRef.current = true
+    setIsExecuting(false)
+    setIsWaitingInput(false)
+    setInputPrompt('')
+    
+    // Rejeitar qualquer input pendente com KeyboardInterrupt para parar a execução
+    if (inputRejectRef.current && pyodide) {
+      try {
+        // Criar uma exceção Python KeyboardInterrupt válida usando toPy
+        // Isso fará com que o código Python pare imediatamente
+        const KeyboardInterruptClass = pyodide.runPython('KeyboardInterrupt')
+        // Usar toPy para converter a exceção JavaScript para Python
+        const exception = pyodide.runPython(`
+          import builtins
+          builtins.KeyboardInterrupt("Execução interrompida pelo usuário")
+        `)
+        inputRejectRef.current(exception)
+      } catch (e) {
+        // Se não conseguir criar KeyboardInterrupt, usar uma exceção genérica
+        try {
+          const exception = pyodide.runPython(`
+            Exception("Execução interrompida pelo usuário")
+          `)
+          inputRejectRef.current(exception)
+        } catch (e2) {
+          // Fallback: usar uma exceção JavaScript que será convertida
+          // Mas primeiro tentar criar uma exceção Python simples
+          try {
+            const exception = pyodide.runPython('RuntimeError("Execução interrompida")')
+            inputRejectRef.current(exception)
+          } catch (e3) {
+            // Último recurso: usar Error JavaScript
+            inputRejectRef.current(new Error('Execução interrompida pelo usuário'))
+          }
+        }
+      }
+      inputRejectRef.current = null
+    }
+    inputResolveRef.current = null
+    
+    // Limpar handlers de stdout/stderr
+    if (pyodide) {
+      try {
+        pyodide.setStdout({ batched: () => {} })
+        pyodide.setStderr({ batched: () => {} })
+      } catch (e) {
+        console.error('Erro ao limpar handlers:', e)
+      }
+    }
+    
+    // Adicionar mensagem de cancelamento à saída
+    const currentOutput = activeTab.output
+    const cancelMessage = '\n\n⚠️ Execução interrompida pelo usuário'
+    updateTabOutput(activeTabId, currentOutput + cancelMessage, false)
+  }, [pyodide, activeTabId, activeTab.output])
+
   const executeCode = async () => {
     if (!pyodide || loading || isExecuting) return
 
+    executionAbortedRef.current = false
     setIsExecuting(true)
     updateTabOutput(activeTabId, '', false)
     outputBufferRef.current = []
@@ -128,6 +187,10 @@ export default function Home() {
             } else {
               outputBufferRef.current.push(text + '\n')
             }
+            
+            // Atualizar a saída em tempo real para que os print() apareçam imediatamente
+            const currentOutput = outputBufferRef.current.join('')
+            updateTabOutput(activeTabId, currentOutput, false)
           }
         } catch (e) {
           // Ignorar erros no handler para evitar loops
@@ -138,8 +201,14 @@ export default function Home() {
       const stderrHandler = (text: string) => {
         try {
           if (text && typeof text === 'string' && text.length > 0) {
+            // Ignorar KeyboardInterrupt causado por cancelamento do usuário
+            if (executionAbortedRef.current && text.includes('KeyboardInterrupt') && text.includes('Execução interrompida pelo usuário')) {
+              return // Não adicionar ao buffer
+            }
             outputBufferRef.current.push(text + '\n')
-            // O erro será marcado quando atualizarmos a saída
+            // Atualizar a saída em tempo real também para erros
+            const currentOutput = outputBufferRef.current.join('')
+            updateTabOutput(activeTabId, currentOutput, true)
           }
         } catch (e) {
           // Ignorar erros no handler para evitar loops
@@ -165,6 +234,37 @@ export default function Home() {
       // Função que será chamada pelo Python quando input() for executado
       const requestInput = (prompt: string) => {
         return new Promise<string>((resolve, reject) => {
+          // Verificar se a execução foi cancelada
+          if (executionAbortedRef.current) {
+            // Se foi cancelado, lançar KeyboardInterrupt para parar a execução
+            try {
+              const exception = pyodide.runPython(`
+                import builtins
+                builtins.KeyboardInterrupt("Execução interrompida pelo usuário")
+              `)
+              reject(exception)
+            } catch (e) {
+              // Fallback: usar exceção genérica
+              try {
+                const exception = pyodide.runPython(`
+                  Exception("Execução interrompida pelo usuário")
+                `)
+                reject(exception)
+              } catch (e2) {
+                // Último recurso: usar Error JavaScript
+                reject(new Error('Execução interrompida pelo usuário'))
+              }
+            }
+            return
+          }
+          
+          // IMPORTANTE: Atualizar a saída antes de solicitar input
+          // Isso garante que todos os print() anteriores sejam exibidos
+          const currentOutput = outputBufferRef.current.join('')
+          if (currentOutput) {
+            updateTabOutput(activeTabId, currentOutput, false)
+          }
+          
           inputResolveRef.current = resolve
           inputRejectRef.current = reject
           setInputPrompt(String(prompt) || '')
@@ -269,7 +369,35 @@ builtins.input = input
       console.log(wrappedCode.split('\n').slice(0, 30).join('\n'))
       console.log('======================')
       
-      const result = await pyodide.runPythonAsync(wrappedCode)
+      // Verificar se foi cancelado antes de executar
+      if (executionAbortedRef.current) {
+        updateTabOutput(activeTabId, '⚠️ Execução interrompida pelo usuário', false)
+        return
+      }
+
+      const result = await pyodide.runPythonAsync(wrappedCode).catch((err) => {
+        // Se a execução foi cancelada, não tratar como erro normal
+        if (executionAbortedRef.current) {
+          return null
+        }
+        // Verificar se é KeyboardInterrupt causado por cancelamento
+        const errorStr = String(err)
+        if (errorStr.includes('KeyboardInterrupt')) {
+          // Se contém a mensagem de cancelamento ou se foi cancelado, não tratar como erro
+          if (errorStr.includes('Execução interrompida pelo usuário') || executionAbortedRef.current) {
+            return null
+          }
+        }
+        throw err
+      })
+
+      // Verificar se foi cancelado durante a execução
+      if (executionAbortedRef.current) {
+        const currentOutput = outputBufferRef.current.join('')
+        const cancelMessage = currentOutput ? '\n\n⚠️ Execução interrompida pelo usuário' : '⚠️ Execução interrompida pelo usuário'
+        updateTabOutput(activeTabId, currentOutput + cancelMessage, false)
+        return
+      }
 
       // Combinar stdout/stderr com o resultado
       // Juntar todos os chunks - cada chunk já tem \n no final agora
@@ -302,6 +430,27 @@ builtins.input = input
       // Apenas remover espaços em branco extras, mas manter quebras de linha
       updateTabOutput(activeTabId, finalOutput || 'Código executado com sucesso!', false)
     } catch (err) {
+      // Verificar se é KeyboardInterrupt causado por cancelamento do usuário
+      const errorStr = String(err)
+      const isKeyboardInterrupt = errorStr.includes('KeyboardInterrupt')
+      const isUserCancelled = errorStr.includes('Execução interrompida pelo usuário') || executionAbortedRef.current
+      
+      // Se foi cancelado pelo usuário, mostrar apenas mensagem de cancelamento
+      if (isKeyboardInterrupt && isUserCancelled) {
+        const currentOutput = outputBufferRef.current.join('')
+        const cancelMessage = currentOutput ? '\n\n⚠️ Execução interrompida pelo usuário' : '⚠️ Execução interrompida pelo usuário'
+        updateTabOutput(activeTabId, currentOutput + cancelMessage, false)
+        return
+      }
+      
+      // Também verificar se foi cancelado (mesmo sem KeyboardInterrupt explícito)
+      if (executionAbortedRef.current) {
+        const currentOutput = outputBufferRef.current.join('')
+        const cancelMessage = currentOutput ? '\n\n⚠️ Execução interrompida pelo usuário' : '⚠️ Execução interrompida pelo usuário'
+        updateTabOutput(activeTabId, currentOutput + cancelMessage, false)
+        return
+      }
+      
       // Capturar qualquer saída que possa ter sido gerada antes do erro
       const capturedOutput = outputBufferRef.current.join('')
       
@@ -327,9 +476,23 @@ builtins.input = input
         errorOutput += `Erro: ${errorMessage}`
       }
       
-      updateTabOutput(activeTabId, errorOutput || 'Erro ao executar código', true)
+      // Se foi cancelado, não mostrar erro, apenas a mensagem de cancelamento
+      if (executionAbortedRef.current) {
+        const currentOutput = outputBufferRef.current.join('')
+        const cancelMessage = currentOutput ? '\n\n⚠️ Execução interrompida pelo usuário' : '⚠️ Execução interrompida pelo usuário'
+        updateTabOutput(activeTabId, currentOutput + cancelMessage, false)
+      } else {
+        updateTabOutput(activeTabId, errorOutput || 'Erro ao executar código', true)
+      }
     } finally {
-      setIsExecuting(false)
+      // Só limpar se não foi cancelado manualmente
+      if (!executionAbortedRef.current) {
+        setIsExecuting(false)
+      }
+      setIsWaitingInput(false)
+      setInputPrompt('')
+      inputResolveRef.current = null
+      inputRejectRef.current = null
       // Não limpar o buffer aqui, pode conter informações úteis
     }
   }
@@ -373,8 +536,8 @@ builtins.input = input
           </div>
         ) : (
           <div className="space-y-4">
-            {/* Execute Button */}
-            <div className="flex justify-center">
+            {/* Execute and Stop Buttons */}
+            <div className="flex justify-center items-center gap-3">
               <button
                 onClick={executeCode}
                 disabled={loading || isExecuting || !pyodide}
@@ -406,6 +569,21 @@ builtins.input = input
                   </>
                 )}
               </button>
+              
+              {isExecuting && (
+                <button
+                  onClick={stopExecution}
+                  className="px-6 py-3 bg-red-600 hover:bg-red-700 text-white font-semibold rounded-lg shadow-lg hover:shadow-xl transform hover:scale-105 transition-all duration-200 flex items-center gap-2"
+                  title="Parar execução"
+                  aria-label="Parar execução do código"
+                >
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 10h6v4H9z" />
+                  </svg>
+                  <span>Parar</span>
+                </button>
+              )}
             </div>
 
             {/* Layout dinâmico baseado na escolha do usuário */}
@@ -458,6 +636,18 @@ builtins.input = input
                       isWaitingInput={isWaitingInput}
                       inputPrompt={inputPrompt}
                       onInputSubmit={(value) => {
+                        // Adicionar o prompt e o valor digitado à saída antes de limpar o estado
+                        const promptText = inputPrompt || ''
+                        const inputLine = promptText + value + '\n'
+                        
+                        // Adicionar à saída atual
+                        const currentOutput = activeTab.output
+                        const newOutput = currentOutput + inputLine
+                        updateTabOutput(activeTabId, newOutput, false)
+                        
+                        // Adicionar também ao buffer para manter consistência
+                        outputBufferRef.current.push(inputLine)
+                        
                         setIsWaitingInput(false)
                         setInputPrompt('')
                         if (inputResolveRef.current) {
