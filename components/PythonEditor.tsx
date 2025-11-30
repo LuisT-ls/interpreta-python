@@ -83,13 +83,39 @@ export function PythonEditor({ code, onChange, disabled, fileName = 'editor.py' 
     if (pairs[e.key] && start === end) {
       const beforeChar = code[start - 1] || ''
       const afterChar = code[start] || ''
+      const closingChar = pairs[e.key]
 
       // Só insere o fechamento se:
       // 1. O caractere anterior não é um escape (\)
-      // 2. Não há um caractere de fechamento já presente logo após
-      if (beforeChar !== '\\' && afterChar !== pairs[e.key]) {
+      // 2. O próximo caractere não é o fechamento correspondente
+      //    Para permitir parênteses aninhados, sempre adicionamos o fechamento
+      //    a menos que o próximo caractere seja exatamente o fechamento correspondente
+      //    E não estejamos dentro de outro par de parênteses/colchetes/chaves
+      if (beforeChar !== '\\') {
+        // Verificar se estamos dentro de parênteses/colchetes/chaves
+        // Contar quantos pares abertos existem antes da posição atual
+        let openCount = 0
+        let closeCount = 0
+        for (let i = 0; i < start; i++) {
+          const char = code[i]
+          if (char === e.key) openCount++
+          if (char === closingChar) closeCount++
+        }
+        const isInsideNested = openCount > closeCount
+        
+        // Se o próximo caractere é o fechamento correspondente E não estamos aninhados,
+        // apenas pular sobre ele (comportamento padrão)
+        // Se estamos aninhados, sempre adicionar o fechamento
+        if (afterChar === closingChar && !isInsideNested) {
+          e.preventDefault()
+          setTimeout(() => {
+            textarea.selectionStart = textarea.selectionEnd = start + 1
+          }, 0)
+          return
+        }
+        
+        // Caso contrário, sempre adicionar o fechamento (permite aninhamento)
         e.preventDefault()
-        const closingChar = pairs[e.key]
         const newCode =
           code.substring(0, start) +
           e.key +
