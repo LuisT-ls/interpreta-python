@@ -330,6 +330,63 @@ builtins.input = input
       // Transformar o código para que input() funcione automaticamente
       let transformedCode = codeLines.join('\n')
       
+      // Função auxiliar para encontrar o fechamento correto de input()
+      const findInputClosing = (code: string, startPos: number): number => {
+        let depth = 1
+        let i = startPos + 6 // "input(" tem 6 caracteres
+        let inString = false
+        let stringChar = ''
+        
+        while (i < code.length && depth > 0) {
+          const char = code[i]
+          const prevChar = i > 0 ? code[i - 1] : ''
+          
+          // Detectar strings (simples ou duplas), ignorando escapes
+          if ((char === '"' || char === "'") && prevChar !== '\\') {
+            if (!inString) {
+              inString = true
+              stringChar = char
+            } else if (char === stringChar) {
+              inString = false
+              stringChar = ''
+            }
+          }
+          
+          if (!inString) {
+            if (char === '(') depth++
+            if (char === ')') depth--
+          }
+          
+          i++
+        }
+        
+        return depth === 0 ? i - 1 : -1
+      }
+      
+      // Primeiro, substituir input() com métodos encadeados: input(...).strip(), input(...).lower(), etc
+      // Processar de trás para frente para não afetar os índices
+      let searchPos = transformedCode.length
+      while (true) {
+        const lastInputPos = transformedCode.lastIndexOf('input(', searchPos)
+        if (lastInputPos === -1) break
+        
+        const closingPos = findInputClosing(transformedCode, lastInputPos)
+        if (closingPos !== -1) {
+          // Verificar se há um método encadeado depois
+          const afterInput = transformedCode.substring(closingPos + 1).trim()
+          if (afterInput.startsWith('.')) {
+            // Envolver input(...) em (await ...)
+            const beforeInput = transformedCode.substring(0, lastInputPos)
+            const inputCall = transformedCode.substring(lastInputPos, closingPos + 1)
+            const afterInputCall = transformedCode.substring(closingPos + 1)
+            transformedCode = beforeInput + '(await ' + inputCall + ')' + afterInputCall
+          }
+        }
+        
+        searchPos = lastInputPos - 1
+        if (searchPos < 0) break
+      }
+      
       // Substituir input() em atribuições simples: variavel = input(...)
       transformedCode = transformedCode.replace(
         /(\s+)(\w+)\s*=\s*input\(/g,
