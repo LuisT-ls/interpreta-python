@@ -39,6 +39,54 @@ export default function Home() {
   const { pyodide, loading, error } = usePyodide()
   const { layout, changeLayout, isMounted } = useLayout()
 
+  // Referência para o input de arquivo (oculto)
+  const fileInputRef = useRef<HTMLInputElement>(null)
+
+  // Função para exportar o código como arquivo .py
+  const exportCode = () => {
+    const blob = new Blob([code], { type: 'text/x-python' })
+    const url = URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = url
+    link.download = 'codigo.py'
+    document.body.appendChild(link)
+    link.click()
+    document.body.removeChild(link)
+    URL.revokeObjectURL(url)
+  }
+
+  // Função para importar código de um arquivo .py
+  const importCode = () => {
+    fileInputRef.current?.click()
+  }
+
+  // Handler para quando um arquivo é selecionado
+  const handleFileImport = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0]
+    if (!file) return
+
+    // Verificar se é um arquivo .py
+    if (!file.name.endsWith('.py')) {
+      alert('Por favor, selecione um arquivo .py')
+      return
+    }
+
+    const reader = new FileReader()
+    reader.onload = (e) => {
+      const content = e.target?.result as string
+      if (content) {
+        setCode(content)
+      }
+    }
+    reader.onerror = () => {
+      alert('Erro ao ler o arquivo')
+    }
+    reader.readAsText(file)
+
+    // Limpar o input para permitir selecionar o mesmo arquivo novamente
+    event.target.value = ''
+  }
+
   const executeCode = async () => {
     if (!pyodide || loading || isExecuting) return
 
@@ -355,6 +403,8 @@ builtins.input = input
                       code={code}
                       onChange={setCode}
                       disabled={loading || isExecuting}
+                      onImport={importCode}
+                      onExport={exportCode}
                     />
                   </div>
                 </div>
@@ -415,6 +465,15 @@ builtins.input = input
         </div>
       </footer>
 
+      {/* Input oculto para importar arquivos */}
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept=".py"
+        onChange={handleFileImport}
+        className="hidden"
+        aria-label="Importar arquivo Python"
+      />
     </div>
   )
 }
