@@ -572,7 +572,11 @@ builtins.input = input
           } else {
             // Tentar calcular diretamente baseado na estrutura
             const originalCodeLines = activeTab.code.split('\n')
-            const importsCount = imports.length
+            // Calcular o número de imports diretamente (já que imports não está acessível aqui)
+            const importsCount = originalCodeLines.filter(line => {
+              const trimmed = line.trim()
+              return trimmed.startsWith('import ') || trimmed.startsWith('from ')
+            }).length
             const baseOffset = importsCount > 0 ? importsCount + 2 : 2 // imports + linha vazia + def
             
             // Se a linha do erro está dentro do código transformado
