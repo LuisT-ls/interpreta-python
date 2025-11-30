@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useRef } from 'react'
+import { useState, useRef, useCallback } from 'react'
 import { usePyodide } from '@/hooks/usePyodide'
 import { useLayout } from '@/hooks/useLayout'
 import { PythonEditor } from '@/components/PythonEditor'
@@ -29,6 +29,12 @@ export default function Home() {
   const [isExecuting, setIsExecuting] = useState(false)
   const [hasError, setHasError] = useState(false)
   const outputBufferRef = useRef<string[]>([])
+  
+  // Estados para controle de input inline no terminal
+  const [isWaitingInput, setIsWaitingInput] = useState(false)
+  const [inputPrompt, setInputPrompt] = useState('')
+  const inputResolveRef = useRef<((value: string) => void) | null>(null)
+  const inputRejectRef = useRef<(() => void) | null>(null)
 
   const { pyodide, loading, error } = usePyodide()
   const { layout, changeLayout, isMounted } = useLayout()
@@ -45,27 +51,168 @@ export default function Home() {
       // Configurar captura de stdout e stderr usando batched
       // IMPORTANTE: O batched envia cada print() como um chunk separado, mas sem \n
       // Precisamos adicionar \n ao final de cada chunk para preservar as quebras de linha
-      pyodide.setStdout({
-        batched: (text: string) => {
-          // Adicionar quebra de linha ao final de cada chunk (como o print() do Python faz)
-          outputBufferRef.current.push(text + '\n')
-        },
-      })
+      // Usar handlers estáveis para evitar problemas de I/O
+      const stdoutHandler = (text: string) => {
+        try {
+          if (text && typeof text === 'string' && text.length > 0) {
+            // O texto já pode conter \n dentro dele (como em print("\ntexto"))
+            // Não adicionar \n extra se o texto já termina com \n
+            // Mas adicionar \n se não terminar, pois cada print() adiciona uma quebra
+            if (text.endsWith('\n')) {
+              outputBufferRef.current.push(text)
+            } else {
+              outputBufferRef.current.push(text + '\n')
+            }
+          }
+        } catch (e) {
+          // Ignorar erros no handler para evitar loops
+          console.error('Erro no stdout handler:', e)
+        }
+      }
 
-      pyodide.setStderr({
-        batched: (text: string) => {
-          // Adicionar quebra de linha ao final de cada chunk
-          outputBufferRef.current.push(text + '\n')
-          setHasError(true)
-        },
-      })
+      const stderrHandler = (text: string) => {
+        try {
+          if (text && typeof text === 'string' && text.length > 0) {
+            outputBufferRef.current.push(text + '\n')
+            setHasError(true)
+          }
+        } catch (e) {
+          // Ignorar erros no handler para evitar loops
+          console.error('Erro no stderr handler:', e)
+        }
+      }
 
-      // Executar o código
-      const result = await pyodide.runPythonAsync(code)
+      // Configurar handlers de forma segura
+      try {
+        pyodide.setStdout({
+          batched: stdoutHandler,
+        })
+
+        pyodide.setStderr({
+          batched: stderrHandler,
+        })
+      } catch (configError) {
+        console.error('Erro ao configurar handlers:', configError)
+        // Continuar mesmo se houver erro na configuração
+      }
+
+      // Substituir input() do Python por um sistema que usa input inline no terminal
+      // Função que será chamada pelo Python quando input() for executado
+      const requestInput = (prompt: string) => {
+        return new Promise<string>((resolve, reject) => {
+          inputResolveRef.current = resolve
+          inputRejectRef.current = reject
+          setInputPrompt(String(prompt) || '')
+          setIsWaitingInput(true)
+        })
+      }
+
+      // Expor a função diretamente no globals do Pyodide
+      pyodide.globals.set('__js_request_input', requestInput)
+
+      // Substituir input() do Python para usar await diretamente
+      // Como o código será executado de forma assíncrona, podemos usar await
+      pyodide.runPython(`
+import builtins
+
+_original_input = builtins.input
+
+# Obter a função do globals
+__js_request_input = globals()['__js_request_input']
+
+async def input(prompt=''):
+    prompt_str = str(prompt) if prompt else ''
+    result = await __js_request_input(prompt_str)
+    if result is None:
+        raise EOFError("EOF when reading a line")
+    return result
+
+builtins.input = input
+      `)
+
+      // Executar o código de forma assíncrona para suportar input()
+      // Separar imports do resto do código de forma mais robusta
+      const lines = code.split('\n')
+      const imports: string[] = []
+      const codeLines: string[] = []
+      
+      // Separar imports e código
+      for (let i = 0; i < lines.length; i++) {
+        const line = lines[i]
+        const trimmed = line.trim()
+        
+        // Pular linhas vazias no início
+        if (trimmed.length === 0 && imports.length === 0 && codeLines.length === 0) {
+          continue
+        }
+        
+        // Detectar imports (incluindo imports com comentários inline)
+        if (trimmed.startsWith('import ') || trimmed.startsWith('from ')) {
+          // Remover comentários inline dos imports se houver
+          const importLine = trimmed.split('#')[0].trim()
+          if (importLine) {
+            imports.push(importLine)
+          }
+        } else {
+          // Adicionar todas as outras linhas ao código
+          codeLines.push(line)
+        }
+      }
+      
+      // Transformar o código para que input() funcione automaticamente
+      let transformedCode = codeLines.join('\n')
+      
+      // Substituir input() em atribuições simples: variavel = input(...)
+      transformedCode = transformedCode.replace(
+        /(\s+)(\w+)\s*=\s*input\(/g,
+        '$1$2 = await input('
+      )
+      
+      // Substituir input() dentro de int(), float(), etc: variavel = int(input(...))
+      transformedCode = transformedCode.replace(
+        /(\s+)(\w+)\s*=\s*(int|float|str)\(input\(/g,
+        '$1$2 = $3(await input('
+      )
+      
+      // Substituir input() em outros contextos: if input(...), return input(...), etc
+      transformedCode = transformedCode.replace(
+        /(\s+)(if|return|print|assert)\s*\(.*?input\(/g,
+        (match) => {
+          // Substituir apenas o input() dentro da expressão
+          return match.replace(/input\(/g, 'await input(')
+        }
+      )
+      
+      // Construir o código final com imports no nível superior
+      // Garantir que os imports sejam executados primeiro
+      const importsCode = imports.length > 0 ? imports.join('\n') + '\n\n' : ''
+      const indentedCode = transformedCode.split('\n').map(line => {
+        // Não indentar linhas vazias
+        if (line.trim().length === 0) return ''
+        return '    ' + line
+      }).join('\n')
+      
+      const wrappedCode = `${importsCode}async def _run_code():\n${indentedCode}\n\n# Executar o código assíncrono\nawait _run_code()`
+      
+      // Debug: verificar se os imports estão sendo capturados
+      console.log('=== DEBUG EXECUÇÃO ===')
+      console.log('Imports detectados:', imports.length > 0 ? imports : 'Nenhum import detectado')
+      console.log('Total de linhas do código original:', lines.length)
+      console.log('Linhas de código (sem imports):', codeLines.length)
+      console.log('Primeiras 5 linhas do código original:', lines.slice(0, 5))
+      console.log('Código final (primeiras 30 linhas):')
+      console.log(wrappedCode.split('\n').slice(0, 30).join('\n'))
+      console.log('======================')
+      
+      const result = await pyodide.runPythonAsync(wrappedCode)
 
       // Combinar stdout/stderr com o resultado
       // Juntar todos os chunks - cada chunk já tem \n no final agora
       let finalOutput = outputBufferRef.current.join('')
+      
+      // IMPORTANTE: Não adicionar \n extra se o chunk já termina com \n
+      // Isso garante que \n dentro das strings sejam preservados corretamente
+      finalOutput = finalOutput.replace(/\n\n+/g, '\n\n') // Limitar múltiplas quebras consecutivas
       
       // Normalizar quebras de linha (converter \r\n para \n)
       finalOutput = finalOutput.replace(/\r\n/g, '\n').replace(/\r/g, '\n')
@@ -90,20 +237,36 @@ export default function Home() {
       // Apenas remover espaços em branco extras, mas manter quebras de linha
       setOutput(finalOutput || 'Código executado com sucesso!')
     } catch (err) {
-      const errorMessage = err instanceof Error ? err.message : String(err)
-      // Formatar traceback se disponível
-      let errorOutput = `Erro: ${errorMessage}`
+      // Capturar qualquer saída que possa ter sido gerada antes do erro
+      const capturedOutput = outputBufferRef.current.join('')
       
-      // Tentar obter mais detalhes do erro
-      if (err && typeof err === 'object' && 'message' in err) {
-        errorOutput = String(err)
+      const errorMessage = err instanceof Error ? err.message : String(err)
+      
+      // Formatar traceback se disponível
+      let errorOutput = ''
+      
+      // Se houver saída capturada antes do erro, incluir
+      if (capturedOutput.trim()) {
+        errorOutput = capturedOutput + '\n'
       }
       
-      setOutput(errorOutput)
+      // Adicionar informações do erro
+      if (err && typeof err === 'object') {
+        // Tentar obter traceback completo se disponível
+        if ('message' in err) {
+          errorOutput += String(err)
+        } else {
+          errorOutput += `Erro: ${errorMessage}`
+        }
+      } else {
+        errorOutput += `Erro: ${errorMessage}`
+      }
+      
+      setOutput(errorOutput || 'Erro ao executar código')
       setHasError(true)
     } finally {
       setIsExecuting(false)
-      outputBufferRef.current = []
+      // Não limpar o buffer aqui, pode conter informações úteis
     }
   }
 
@@ -207,6 +370,16 @@ export default function Home() {
                       output={output}
                       isError={hasError}
                       isLoading={loading}
+                      isWaitingInput={isWaitingInput}
+                      inputPrompt={inputPrompt}
+                      onInputSubmit={(value) => {
+                        setIsWaitingInput(false)
+                        setInputPrompt('')
+                        if (inputResolveRef.current) {
+                          inputResolveRef.current(value)
+                          inputResolveRef.current = null
+                        }
+                      }}
                     />
                   </div>
                 </div>
@@ -241,6 +414,7 @@ export default function Home() {
           </p>
         </div>
       </footer>
+
     </div>
   )
 }
