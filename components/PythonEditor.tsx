@@ -7,9 +7,10 @@ interface PythonEditorProps {
   onChange: (code: string) => void
   disabled?: boolean
   fileName?: string
+  errorLine?: number | null
 }
 
-export function PythonEditor({ code, onChange, disabled, fileName = 'editor.py' }: PythonEditorProps) {
+export function PythonEditor({ code, onChange, disabled, fileName = 'editor.py', errorLine }: PythonEditorProps) {
   const textareaRef = useRef<HTMLTextAreaElement>(null)
 
   useEffect(() => {
@@ -164,18 +165,53 @@ export function PythonEditor({ code, onChange, disabled, fileName = 'editor.py' 
     }
   }
 
+  // Dividir o código em linhas para destacar a linha de erro
+  const lines = code.split('\n')
+  const lineNumbers = lines.map((_, i) => i + 1)
+
   return (
     <div className="relative h-full flex flex-col">
-      <textarea
-        ref={textareaRef}
-        value={code}
-        onChange={(e) => onChange(e.target.value)}
-        onKeyDown={handleKeyDown}
-        disabled={disabled}
-        className="flex-1 w-full p-4 bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 font-mono text-sm resize-none focus:outline-none disabled:opacity-50 disabled:cursor-not-allowed"
-        placeholder="Digite seu código Python aqui..."
-        spellCheck={false}
-      />
+      <div className="flex-1 flex overflow-auto relative">
+        {/* Números das linhas */}
+        <div className="flex-shrink-0 px-2 py-4 bg-gray-100 dark:bg-gray-800 text-gray-500 dark:text-gray-400 text-right text-xs font-mono select-none">
+          {lineNumbers.map((num) => (
+            <div
+              key={num}
+              className={`h-5 leading-5 ${
+                errorLine === num ? 'text-red-600 dark:text-red-400 font-semibold' : ''
+              }`}
+            >
+              {num}
+            </div>
+          ))}
+        </div>
+        {/* Editor */}
+        <div className="flex-1 relative">
+          <textarea
+            ref={textareaRef}
+            value={code}
+            onChange={(e) => onChange(e.target.value)}
+            onKeyDown={handleKeyDown}
+            disabled={disabled}
+            className="w-full h-full p-4 bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 font-mono text-sm resize-none focus:outline-none disabled:opacity-50 disabled:cursor-not-allowed"
+            placeholder="Digite seu código Python aqui..."
+            spellCheck={false}
+            style={{
+              lineHeight: '20px',
+            }}
+          />
+          {/* Indicador visual da linha de erro */}
+          {errorLine && (
+            <div
+              className="absolute left-0 right-0 bg-red-100 dark:bg-red-900/30 border-l-4 border-red-500 pointer-events-none"
+              style={{
+                top: `${(errorLine - 1) * 20 + 16}px`, // 16px é o padding-top
+                height: '20px',
+              }}
+            />
+          )}
+        </div>
+      </div>
     </div>
   )
 }

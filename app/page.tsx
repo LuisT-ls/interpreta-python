@@ -25,8 +25,10 @@ export default function Home() {
   } = useEditorTabs()
 
   const [isExecuting, setIsExecuting] = useState(false)
+  const [errorLine, setErrorLine] = useState<number | null>(null)
   const outputBufferRef = useRef<string[]>([])
   const executionAbortedRef = useRef(false)
+  const lineMappingRef = useRef<Map<number, number>>(new Map()) // Mapeia linha transformada -> linha original
   
   // Estados para controle de input inline no terminal
   const [isWaitingInput, setIsWaitingInput] = useState(false)
@@ -168,6 +170,7 @@ export default function Home() {
 
     executionAbortedRef.current = false
     setIsExecuting(true)
+    setErrorLine(null)
     updateTabOutput(activeTabId, '', false)
     outputBufferRef.current = []
 
@@ -351,9 +354,67 @@ builtins.input = input
       // Construir o código final com imports no nível superior
       // Garantir que os imports sejam executados primeiro
       const importsCode = imports.length > 0 ? imports.join('\n') + '\n\n' : ''
-      const indentedCode = transformedCode.split('\n').map(line => {
+      
+      // Criar mapeamento de linhas: linha no código transformado -> linha no código original
+      // Primeiro, criar um mapa de codeLines index -> linha original
+      const codeLineToOriginalLine = new Map<number, number>()
+      let originalLineNum = 1
+      let codeLineCounter = 0
+      
+      for (let i = 0; i < lines.length; i++) {
+        const originalLine = lines[i]
+        const trimmed = originalLine.trim()
+        
+        // Pular linhas vazias no início
+        if (trimmed.length === 0 && imports.length === 0 && codeLineCounter === 0) {
+          originalLineNum++
+          continue
+        }
+        
+        // Pular imports
+        if (trimmed.startsWith('import ') || trimmed.startsWith('from ')) {
+          originalLineNum++
+          continue
+        }
+        
+        // Esta é uma linha de código
+        codeLineToOriginalLine.set(codeLineCounter, originalLineNum)
+        codeLineCounter++
+        originalLineNum++
+      }
+      
+      // Calcular onde começa o código dentro de _run_code
+      // Estrutura do código transformado:
+      // - Se há imports: imports (N linhas) + linha vazia (1 linha) + def (1 linha) = N + 2
+      // - Se não há imports: def (1 linha) = 1
+      let transformedLineNum = 1
+      if (imports.length > 0) {
+        transformedLineNum += imports.length // linhas de imports
+        transformedLineNum++ // linha vazia após imports
+      }
+      transformedLineNum++ // linha do "async def _run_code():"
+      
+      console.log('Linha inicial do código dentro de _run_code:', transformedLineNum)
+      console.log('codeLineToOriginalLine:', Array.from(codeLineToOriginalLine.entries()))
+      
+      // Mapear linhas do código dentro de _run_code
+      const indentedCode = transformedCode.split('\n').map((line, codeIndex) => {
         // Não indentar linhas vazias
-        if (line.trim().length === 0) return ''
+        if (line.trim().length === 0) {
+          transformedLineNum++
+          return ''
+        }
+        
+        // Mapear esta linha transformada para a linha original
+        const originalLine = codeLineToOriginalLine.get(codeIndex)
+        if (originalLine !== undefined) {
+          lineMappingRef.current.set(transformedLineNum, originalLine)
+          console.log(`Mapeando linha transformada ${transformedLineNum} -> linha original ${originalLine} (codeIndex: ${codeIndex})`)
+        } else {
+          console.warn(`Não encontrou mapeamento para codeIndex ${codeIndex}`)
+        }
+        
+        transformedLineNum++
         return '    ' + line
       }).join('\n')
       
@@ -364,6 +425,7 @@ builtins.input = input
       console.log('Imports detectados:', imports.length > 0 ? imports : 'Nenhum import detectado')
       console.log('Total de linhas do código original:', lines.length)
       console.log('Linhas de código (sem imports):', codeLines.length)
+      console.log('Mapeamento de linhas criado:', Array.from(lineMappingRef.current.entries()))
       console.log('Primeiras 5 linhas do código original:', lines.slice(0, 5))
       console.log('Código final (primeiras 30 linhas):')
       console.log(wrappedCode.split('\n').slice(0, 30).join('\n'))
@@ -428,6 +490,7 @@ builtins.input = input
 
       // Não usar trim() para preservar quebras de linha no início/fim se necessário
       // Apenas remover espaços em branco extras, mas manter quebras de linha
+      setErrorLine(null) // Limpar erro se a execução foi bem-sucedida
       updateTabOutput(activeTabId, finalOutput || 'Código executado com sucesso!', false)
     } catch (err) {
       // Verificar se é KeyboardInterrupt causado por cancelamento do usuário
@@ -456,7 +519,126 @@ builtins.input = input
       
       const errorMessage = err instanceof Error ? err.message : String(err)
       
-      // Formatar traceback se disponível
+      // Parsear o traceback para extrair informações do erro
+      let parsedErrorLine: number | null = null
+      let errorType = 'Erro'
+      let errorDetails = errorMessage
+      
+      // Tentar extrair a linha do erro do traceback
+      // Formato típico: File "<exec>", line X, in <module> ou File "<exec>", line X, in _run_code
+      const lineMatch = errorStr.match(/File\s+["<]exec[">],\s+line\s+(\d+)/i)
+      if (lineMatch) {
+        const lineNum = parseInt(lineMatch[1], 10)
+        
+        // Debug: verificar o mapeamento
+        console.log('Linha do erro no traceback:', lineNum)
+        console.log('Mapeamento disponível:', Array.from(lineMappingRef.current.entries()))
+        
+        // Usar o mapeamento criado durante a transformação
+        const mappedLine = lineMappingRef.current.get(lineNum)
+        if (mappedLine) {
+          parsedErrorLine = mappedLine
+          console.log('Linha mapeada encontrada:', mappedLine)
+        } else {
+          // Se não encontrou no mapeamento, tentar uma abordagem alternativa
+          // Procurar a linha mais próxima no mapeamento
+          let closestLine: number | null = null
+          let minDiff = Infinity
+          
+          for (const [transformedLine, originalLine] of lineMappingRef.current.entries()) {
+            const diff = Math.abs(transformedLine - lineNum)
+            if (diff < minDiff) {
+              minDiff = diff
+              closestLine = originalLine
+            }
+          }
+          
+          if (closestLine !== null && minDiff <= 2) {
+            parsedErrorLine = closestLine
+            console.log('Usando linha mais próxima:', closestLine)
+          } else {
+            const originalCodeLines = activeTab.code.split('\n')
+            if (lineNum > 0 && lineNum <= originalCodeLines.length) {
+              parsedErrorLine = lineNum
+              console.log('Usando linha direta:', lineNum)
+            }
+          }
+        }
+      }
+      
+      // Tentar extrair o tipo de erro (NameError, ValueError, etc.)
+      // Para SyntaxError, procurar primeiro pois tem formato especial
+      if (errorStr.includes('SyntaxError')) {
+        errorType = 'SyntaxError'
+        // Extrair a mensagem do SyntaxError
+        const syntaxMatch = errorStr.match(/SyntaxError:\s*(.+?)(?:\n|$)/i)
+        if (syntaxMatch) {
+          errorDetails = syntaxMatch[1].trim()
+        } else {
+          // Tentar extrair de outra forma
+          const typeIndex = errorStr.indexOf('SyntaxError')
+          const afterType = errorStr.substring(typeIndex + 'SyntaxError'.length).trim()
+          if (afterType.startsWith(':')) {
+            errorDetails = afterType.substring(1).trim().split('\n')[0]
+          } else {
+            errorDetails = 'syntax error'
+          }
+        }
+      } else {
+        const errorTypeMatch = errorStr.match(/(\w+Error|Exception):\s*(.+?)(?:\n|$)/i)
+        if (errorTypeMatch) {
+          errorType = errorTypeMatch[1]
+          errorDetails = errorTypeMatch[2].trim()
+        } else {
+          // Tentar encontrar o tipo de erro de outra forma
+          const commonErrors = ['NameError', 'TypeError', 'ValueError', 'IndentationError', 'AttributeError', 'KeyError', 'IndexError', 'ZeroDivisionError', 'FileNotFoundError']
+          for (const errType of commonErrors) {
+            if (errorStr.includes(errType)) {
+              errorType = errType
+              // Extrair a mensagem após o tipo de erro
+              const typeIndex = errorStr.indexOf(errType)
+              const afterType = errorStr.substring(typeIndex + errType.length).trim()
+              if (afterType.startsWith(':')) {
+                errorDetails = afterType.substring(1).trim().split('\n')[0]
+              } else {
+                // Tentar extrair da mensagem completa
+                const messageMatch = errorStr.match(new RegExp(`${errType}[^\\n]*:([^\\n]+)`, 'i'))
+                if (messageMatch) {
+                  errorDetails = messageMatch[1].trim()
+                }
+              }
+              break
+            }
+          }
+        }
+      }
+      
+      // Se não encontrou detalhes, usar a mensagem de erro completa (limitada)
+      if (!errorDetails || errorDetails === errorMessage) {
+        // Tentar extrair apenas a parte relevante da mensagem
+        const simpleMessage = errorMessage.split('\n')[0].trim()
+        if (simpleMessage && simpleMessage !== errorMessage) {
+          errorDetails = simpleMessage
+        } else {
+          // Tentar extrair da string completa do erro
+          const lastLine = errorStr.split('\n').filter(line => line.trim()).pop() || ''
+          if (lastLine.includes(':')) {
+            const parts = lastLine.split(':')
+            if (parts.length > 1) {
+              errorDetails = parts.slice(1).join(':').trim()
+            } else {
+              errorDetails = errorMessage.substring(0, 200) // Limitar tamanho
+            }
+          } else {
+            errorDetails = errorMessage.substring(0, 200) // Limitar tamanho
+          }
+        }
+      }
+      
+      // Definir a linha do erro
+      setErrorLine(parsedErrorLine)
+      
+      // Formatar erro no formato tradicional do Python
       let errorOutput = ''
       
       // Se houver saída capturada antes do erro, incluir
@@ -464,23 +646,67 @@ builtins.input = input
         errorOutput = capturedOutput + '\n'
       }
       
-      // Adicionar informações do erro
-      if (err && typeof err === 'object') {
-        // Tentar obter traceback completo se disponível
-        if ('message' in err) {
-          errorOutput += String(err)
+      // Para SyntaxError, exibir de forma mais direta
+      if (errorType === 'SyntaxError') {
+        // Formato: SyntaxError: mensagem (linha X)
+        if (parsedErrorLine) {
+          errorOutput += `${errorType}: ${errorDetails} (linha ${parsedErrorLine})\n`
         } else {
-          errorOutput += `Erro: ${errorMessage}`
+          // Tentar extrair a linha do traceback original se disponível
+          const tracebackLineMatch = errorStr.match(/File\s+["<]exec[">],\s+line\s+(\d+)/i)
+          if (tracebackLineMatch) {
+            const tracebackLine = tracebackLineMatch[1]
+            errorOutput += `${errorType}: ${errorDetails} (linha ${tracebackLine})\n`
+          } else {
+            errorOutput += `${errorType}: ${errorDetails}\n`
+          }
         }
       } else {
-        errorOutput += `Erro: ${errorMessage}`
+        // Para outros erros, usar o formato completo com traceback
+        // Formatar traceback no estilo Python (não duplicar se já estiver no errorStr)
+        if (!errorStr.includes('Traceback (most recent call last):')) {
+          errorOutput += 'Traceback (most recent call last):\n'
+        }
+        
+        if (parsedErrorLine) {
+          // Obter a linha do código que causou o erro
+          const codeLines = activeTab.code.split('\n')
+          const errorCodeLine = codeLines[parsedErrorLine - 1]
+          
+          if (errorCodeLine !== undefined && errorCodeLine.trim().length > 0) {
+            errorOutput += `  File "${activeTab.name}", line ${parsedErrorLine}, in <module>\n`
+            // Mostrar a linha do código (remover espaços iniciais extras, mas manter indentação relativa)
+            const trimmedLine = errorCodeLine.trimStart()
+            errorOutput += `    ${trimmedLine}\n`
+          } else {
+            errorOutput += `  File "${activeTab.name}", line ${parsedErrorLine}, in <module>\n`
+          }
+        } else {
+          // Tentar extrair a linha do traceback original se disponível
+          const tracebackLineMatch = errorStr.match(/File\s+["<]exec[">],\s+line\s+(\d+)/i)
+          if (tracebackLineMatch) {
+            const tracebackLine = tracebackLineMatch[1]
+            errorOutput += `  File "${activeTab.name}", line ${tracebackLine}, in <module>\n`
+          } else {
+            errorOutput += `  File "${activeTab.name}", line ?, in <module>\n`
+          }
+        }
+        
+        // Adicionar o tipo de erro e a mensagem (garantir que não duplique)
+        if (!errorOutput.includes(`${errorType}:`)) {
+          errorOutput += `${errorType}: ${errorDetails}\n`
+        }
       }
+      
+      // Adicionar mensagem de saída do processo
+      errorOutput += '\n** Process exited - Return Code: 1 **\n'
       
       // Se foi cancelado, não mostrar erro, apenas a mensagem de cancelamento
       if (executionAbortedRef.current) {
         const currentOutput = outputBufferRef.current.join('')
         const cancelMessage = currentOutput ? '\n\n⚠️ Execução interrompida pelo usuário' : '⚠️ Execução interrompida pelo usuário'
         updateTabOutput(activeTabId, currentOutput + cancelMessage, false)
+        setErrorLine(null)
       } else {
         updateTabOutput(activeTabId, errorOutput || 'Erro ao executar código', true)
       }
@@ -615,9 +841,13 @@ builtins.input = input
                   <div className="flex-1 h-[400px] sm:h-[500px] lg:h-[600px]">
                     <PythonEditor
                       code={activeTab.code}
-                      onChange={(newCode) => updateTabCode(activeTabId, newCode)}
+                      onChange={(newCode) => {
+                        updateTabCode(activeTabId, newCode)
+                        setErrorLine(null) // Limpar erro quando o código é editado
+                      }}
                       disabled={loading || isExecuting}
                       fileName={activeTab.name}
+                      errorLine={errorLine}
                     />
                   </div>
                 </div>
