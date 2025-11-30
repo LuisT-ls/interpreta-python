@@ -39,16 +39,20 @@ export default function Home() {
     outputBufferRef.current = []
 
     try {
-      // Configurar captura de stdout e stderr
+      // Configurar captura de stdout e stderr usando batched
+      // IMPORTANTE: O batched envia cada print() como um chunk separado, mas sem \n
+      // Precisamos adicionar \n ao final de cada chunk para preservar as quebras de linha
       pyodide.setStdout({
         batched: (text: string) => {
-          outputBufferRef.current.push(text)
+          // Adicionar quebra de linha ao final de cada chunk (como o print() do Python faz)
+          outputBufferRef.current.push(text + '\n')
         },
       })
 
       pyodide.setStderr({
         batched: (text: string) => {
-          outputBufferRef.current.push(text)
+          // Adicionar quebra de linha ao final de cada chunk
+          outputBufferRef.current.push(text + '\n')
           setHasError(true)
         },
       })
@@ -57,7 +61,14 @@ export default function Home() {
       const result = await pyodide.runPythonAsync(code)
 
       // Combinar stdout/stderr com o resultado
+      // Juntar todos os chunks - cada chunk já tem \n no final agora
       let finalOutput = outputBufferRef.current.join('')
+      
+      // Normalizar quebras de linha (converter \r\n para \n)
+      finalOutput = finalOutput.replace(/\r\n/g, '\n').replace(/\r/g, '\n')
+      
+      // Remover quebras de linha extras no final (mas manter pelo menos uma se houver conteúdo)
+      finalOutput = finalOutput.replace(/\n+$/, finalOutput.trim() ? '\n' : '')
       
       // Se houver um resultado de retorno (não apenas print), adicionar
       if (result !== undefined && result !== null && result !== '') {
@@ -72,6 +83,8 @@ export default function Home() {
         }
       }
 
+      // Não usar trim() para preservar quebras de linha no início/fim se necessário
+      // Apenas remover espaços em branco extras, mas manter quebras de linha
       setOutput(finalOutput || 'Código executado com sucesso!')
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : String(err)

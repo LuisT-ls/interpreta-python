@@ -24,9 +24,12 @@ export function OutputTerminal({ output, isError = false, isLoading = false }: O
             <span>Carregando Pyodide...</span>
           </div>
         ) : output ? (
-          <pre className={`font-mono text-sm whitespace-pre-wrap break-words ${
-            isError ? 'text-red-400' : 'text-green-400'
-          }`}>
+          <pre 
+            className={`font-mono text-sm whitespace-pre-wrap break-words ${
+              isError ? 'text-red-400' : 'text-green-400'
+            }`}
+            style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}
+          >
             {output}
           </pre>
         ) : (
