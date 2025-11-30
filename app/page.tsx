@@ -32,7 +32,7 @@ export default function Home() {
   const [isWaitingInput, setIsWaitingInput] = useState(false)
   const [inputPrompt, setInputPrompt] = useState('')
   const inputResolveRef = useRef<((value: string) => void) | null>(null)
-  const inputRejectRef = useRef<(() => void) | null>(null)
+  const inputRejectRef = useRef<((error: any) => void) | null>(null)
 
   const { pyodide, loading, error } = usePyodide()
   const { layout, changeLayout, isMounted } = useLayout()
