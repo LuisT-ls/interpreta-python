@@ -360,13 +360,15 @@ builtins.input = input
       const codeLineToOriginalLine = new Map<number, number>()
       let originalLineNum = 1
       let codeLineCounter = 0
+      let skippedEmptyAtStart = false
       
       for (let i = 0; i < lines.length; i++) {
         const originalLine = lines[i]
         const trimmed = originalLine.trim()
         
-        // Pular linhas vazias no início
-        if (trimmed.length === 0 && imports.length === 0 && codeLineCounter === 0) {
+        // Pular linhas vazias no início (apenas uma vez)
+        if (trimmed.length === 0 && !skippedEmptyAtStart && imports.length === 0 && codeLineCounter === 0) {
+          skippedEmptyAtStart = true
           originalLineNum++
           continue
         }
@@ -377,11 +379,13 @@ builtins.input = input
           continue
         }
         
-        // Esta é uma linha de código
+        // Esta é uma linha de código (mesmo que seja vazia depois dos imports)
         codeLineToOriginalLine.set(codeLineCounter, originalLineNum)
         codeLineCounter++
         originalLineNum++
       }
+      
+      console.log('codeLineToOriginalLine criado:', Array.from(codeLineToOriginalLine.entries()))
       
       // Calcular onde começa o código dentro de _run_code
       // Estrutura do código transformado:
@@ -398,25 +402,30 @@ builtins.input = input
       console.log('codeLineToOriginalLine:', Array.from(codeLineToOriginalLine.entries()))
       
       // Mapear linhas do código dentro de _run_code
-      const indentedCode = transformedCode.split('\n').map((line, codeIndex) => {
-        // Não indentar linhas vazias
-        if (line.trim().length === 0) {
-          transformedLineNum++
-          return ''
-        }
-        
+      const codeLinesArray = transformedCode.split('\n')
+      const indentedCode = codeLinesArray.map((line, codeIndex) => {
         // Mapear esta linha transformada para a linha original
+        // IMPORTANTE: Mapear ANTES de incrementar transformedLineNum
         const originalLine = codeLineToOriginalLine.get(codeIndex)
         if (originalLine !== undefined) {
           lineMappingRef.current.set(transformedLineNum, originalLine)
-          console.log(`Mapeando linha transformada ${transformedLineNum} -> linha original ${originalLine} (codeIndex: ${codeIndex})`)
+          console.log(`✅ Mapeando linha transformada ${transformedLineNum} -> linha original ${originalLine} (codeIndex: ${codeIndex})`)
         } else {
-          console.warn(`Não encontrou mapeamento para codeIndex ${codeIndex}`)
+          console.warn(`⚠️ Não encontrou mapeamento para codeIndex ${codeIndex} (total codeLines: ${codeLinesArray.length}, total mapeamento: ${codeLineToOriginalLine.size})`)
         }
         
+        // Incrementar após mapear
         transformedLineNum++
+        
+        // Não indentar linhas vazias
+        if (line.trim().length === 0) {
+          return ''
+        }
+        
         return '    ' + line
       }).join('\n')
+      
+      console.log('Mapeamento final criado:', Array.from(lineMappingRef.current.entries()))
       
       const wrappedCode = `${importsCode}async def _run_code():\n${indentedCode}\n\n# Executar o código assíncrono\nawait _run_code()`
       
@@ -557,14 +566,57 @@ builtins.input = input
             }
           }
           
-          if (closestLine !== null && minDiff <= 2) {
+          if (closestLine !== null && minDiff <= 3) {
             parsedErrorLine = closestLine
-            console.log('Usando linha mais próxima:', closestLine)
+            console.log('✅ Usando linha mais próxima:', closestLine, '(diff:', minDiff, ')')
           } else {
+            // Tentar calcular diretamente baseado na estrutura
             const originalCodeLines = activeTab.code.split('\n')
-            if (lineNum > 0 && lineNum <= originalCodeLines.length) {
+            const importsCount = imports.length
+            const baseOffset = importsCount > 0 ? importsCount + 2 : 2 // imports + linha vazia + def
+            
+            // Se a linha do erro está dentro do código transformado
+            if (lineNum > baseOffset) {
+              const codeLineIndex = lineNum - baseOffset
+              // Recalcular o mapeamento para encontrar a linha original
+              let codeLineCounter = 0
+              let originalLineCounter = 1
+              
+              for (let i = 0; i < originalCodeLines.length; i++) {
+                const line = originalCodeLines[i]
+                const trimmed = line.trim()
+                
+                // Pular linhas vazias no início
+                if (trimmed.length === 0 && importsCount === 0 && codeLineCounter === 0) {
+                  originalLineCounter++
+                  continue
+                }
+                
+                // Pular imports
+                if (trimmed.startsWith('import ') || trimmed.startsWith('from ')) {
+                  originalLineCounter++
+                  continue
+                }
+                
+                // Esta é uma linha de código
+                if (codeLineCounter === codeLineIndex) {
+                  parsedErrorLine = originalLineCounter
+                  console.log('✅ Linha calculada diretamente:', originalLineCounter, 'para codeLineIndex', codeLineIndex)
+                  break
+                }
+                
+                codeLineCounter++
+                originalLineCounter++
+              }
+              
+              // Se ainda não encontrou, usar fallback
+              if (!parsedErrorLine && lineNum > 0 && lineNum <= originalCodeLines.length) {
+                parsedErrorLine = lineNum
+                console.log('⚠️ Usando linha direta (fallback):', lineNum)
+              }
+            } else if (lineNum > 0 && lineNum <= originalCodeLines.length) {
               parsedErrorLine = lineNum
-              console.log('Usando linha direta:', lineNum)
+              console.log('⚠️ Usando linha direta (fallback 2):', lineNum)
             }
           }
         }
