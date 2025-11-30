@@ -4,8 +4,13 @@ import { useEffect, useState } from 'react'
 
 interface Pyodide {
   runPythonAsync: (code: string) => Promise<any>
+  runPython: (code: string) => any
   setStdout: (options: { batched?: (text: string) => void; write?: (text: string) => void; raw?: boolean }) => void
   setStderr: (options: { batched?: (text: string) => void; write?: (text: string) => void; raw?: boolean }) => void
+  globals: {
+    set: (key: string, value: any) => void
+    get: (key: string) => any
+  }
 }
 
 declare global {
