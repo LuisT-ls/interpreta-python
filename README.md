@@ -14,13 +14,17 @@ Uma aplicação moderna e responsiva desenvolvida em Next.js que permite executa
 
 ## 🛠️ Tecnologias
 
-- **Next.js 14** (App Router)
-- **React 18**
-- **TypeScript**
+- **Next.js 16** (App Router) - com Turbopack
+- **React 19**
+- **TypeScript 5.6**
 - **Tailwind CSS**
 - **Pyodide** (v0.26.1)
 
 ## 📦 Instalação
+
+**Requisitos:**
+- Node.js 20.9 ou superior
+- npm ou yarn
 
 1. Clone o repositório:
 ```bash
@@ -37,6 +41,8 @@ npm install
 ```bash
 npm run dev
 ```
+
+> **Nota:** Next.js 16 usa o **Turbopack** por padrão, oferecendo tempos de compilação muito mais rápidos. Se precisar usar Webpack, execute `npm run dev -- --webpack`.
 
 4. Acesse [http://localhost:3000](http://localhost:3000) no seu navegador.
 
