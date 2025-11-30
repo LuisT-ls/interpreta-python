@@ -2,9 +2,11 @@
 
 import { useState, useRef } from 'react'
 import { usePyodide } from '@/hooks/usePyodide'
+import { useLayout } from '@/hooks/useLayout'
 import { PythonEditor } from '@/components/PythonEditor'
 import { OutputTerminal } from '@/components/OutputTerminal'
 import { ThemeToggle } from '@/components/ThemeToggle'
+import { LayoutSelector } from '@/components/LayoutSelector'
 
 const DEFAULT_CODE = `# Bem-vindo ao Interpretador Python Web!
 # Digite seu código Python aqui e clique em "Executar Código"
@@ -29,6 +31,7 @@ export default function Home() {
   const outputBufferRef = useRef<string[]>([])
 
   const { pyodide, loading, error } = usePyodide()
+  const { layout, changeLayout, isMounted } = useLayout()
 
   const executeCode = async () => {
     if (!pyodide || loading || isExecuting) return
@@ -113,7 +116,10 @@ export default function Home() {
             <h1 className="text-xl font-bold text-gray-900 dark:text-gray-100">
               Interpretador Python Web
             </h1>
-            <ThemeToggle />
+            <div className="flex items-center gap-3">
+              {isMounted && <LayoutSelector currentLayout={layout} onLayoutChange={changeLayout} />}
+              <ThemeToggle />
+            </div>
           </div>
         </div>
       </header>
@@ -130,18 +136,7 @@ export default function Home() {
             </p>
           </div>
         ) : (
-          <div className="space-y-6">
-            {/* Editor Section */}
-            <div className="bg-white dark:bg-gray-900 rounded-lg shadow-lg border border-gray-200 dark:border-gray-800 overflow-hidden">
-              <div className="h-[400px] sm:h-[500px]">
-                <PythonEditor
-                  code={code}
-                  onChange={setCode}
-                  disabled={loading || isExecuting}
-                />
-              </div>
-            </div>
-
+          <div className="space-y-4">
             {/* Execute Button */}
             <div className="flex justify-center">
               <button
@@ -177,14 +172,46 @@ export default function Home() {
               </button>
             </div>
 
-            {/* Terminal Section */}
-            <div className="h-[300px] sm:h-[400px]">
-              <OutputTerminal
-                output={output}
-                isError={hasError}
-                isLoading={loading}
-              />
-            </div>
+            {/* Layout dinâmico baseado na escolha do usuário */}
+            {isMounted && (
+              <div
+                className={`${
+                  layout === 'bottom' || layout === 'top'
+                    ? 'flex flex-col gap-4'
+                    : 'grid grid-cols-1 lg:grid-cols-2 gap-4'
+                }`}
+              >
+                {/* Editor Section */}
+                <div
+                  className={`bg-white dark:bg-gray-900 rounded-lg shadow-lg border border-gray-200 dark:border-gray-800 overflow-hidden ${
+                    layout === 'top' ? 'order-2' : layout === 'left' ? 'lg:order-2 order-1' : 'order-1'
+                  }`}
+                >
+                  <div className="h-[400px] sm:h-[500px] lg:h-[600px]">
+                    <PythonEditor
+                      code={code}
+                      onChange={setCode}
+                      disabled={loading || isExecuting}
+                    />
+                  </div>
+                </div>
+
+                {/* Terminal Section */}
+                <div
+                  className={`bg-white dark:bg-gray-900 rounded-lg shadow-lg border border-gray-200 dark:border-gray-800 overflow-hidden ${
+                    layout === 'top' ? 'order-1' : layout === 'left' ? 'lg:order-1 order-2' : 'order-2'
+                  }`}
+                >
+                  <div className="h-[300px] sm:h-[400px] lg:h-[600px]">
+                    <OutputTerminal
+                      output={output}
+                      isError={hasError}
+                      isLoading={loading}
+                    />
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
         )}
       </main>
