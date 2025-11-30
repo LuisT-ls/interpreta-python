@@ -1,0 +1,107 @@
+'use client'
+
+import { EditorTab } from '@/hooks/useEditorTabs'
+import { ExportMenu } from '@/components/ExportMenu'
+
+interface EditorTabsProps {
+  tabs: EditorTab[]
+  activeTabId: string
+  onTabClick: (tabId: string) => void
+  onTabClose: (tabId: string) => void
+  onNewTab: () => void
+  onImport?: () => void
+  onExportCurrent?: () => void
+  onExportAll?: () => void
+}
+
+export function EditorTabs({ tabs, activeTabId, onTabClick, onTabClose, onNewTab, onImport, onExportCurrent, onExportAll }: EditorTabsProps) {
+  return (
+    <div className="flex items-center justify-between gap-1 px-2 bg-gray-50 dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 overflow-x-auto">
+      <div className="flex items-center gap-1">
+        {tabs.map((tab) => (
+          <button
+            key={tab.id}
+            onClick={() => onTabClick(tab.id)}
+            className={`
+              flex items-center gap-2 px-3 py-2 text-sm font-medium rounded-t-lg transition-colors whitespace-nowrap
+              ${
+                activeTabId === tab.id
+                  ? 'bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 border-t border-l border-r border-gray-200 dark:border-gray-700'
+                  : 'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-100 hover:bg-gray-100 dark:hover:bg-gray-700'
+              }
+            `}
+          >
+            <span>{tab.name}</span>
+            {tabs.length > 1 && (
+              <div
+                onClick={(e) => {
+                  e.stopPropagation()
+                  onTabClose(tab.id)
+                }}
+                className="ml-1 p-0.5 rounded hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors cursor-pointer"
+                role="button"
+                tabIndex={0}
+                aria-label={`Fechar ${tab.name}`}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault()
+                    e.stopPropagation()
+                    onTabClose(tab.id)
+                  }
+                }}
+              >
+                <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </div>
+            )}
+          </button>
+        ))}
+        <button
+          onClick={onNewTab}
+          className="ml-2 px-3 py-2 text-sm font-medium text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-100 hover:bg-gray-100 dark:hover:bg-gray-700 rounded transition-colors"
+          title="Nova aba"
+          aria-label="Criar nova aba"
+        >
+          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+          </svg>
+        </button>
+      </div>
+      <div className="flex items-center gap-2">
+        {onImport && (
+          <button
+            onClick={onImport}
+            className="p-1.5 text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 hover:bg-gray-200 dark:hover:bg-gray-700 rounded transition-colors"
+            title="Importar código"
+            aria-label="Importar código"
+          >
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
+            </svg>
+          </button>
+        )}
+        {tabs.length > 1 && onExportCurrent && onExportAll ? (
+          <ExportMenu
+            onExportCurrent={onExportCurrent}
+            onExportAll={onExportAll}
+            currentTabName={tabs.find(tab => tab.id === activeTabId)?.name || 'editor.py'}
+            totalTabs={tabs.length}
+          />
+        ) : onExportCurrent ? (
+          <button
+            onClick={onExportCurrent}
+            className="p-1.5 text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 hover:bg-gray-200 dark:hover:bg-gray-700 rounded transition-colors"
+            title="Exportar código"
+            aria-label="Exportar código"
+          >
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+            </svg>
+          </button>
+        ) : null}
+      </div>
+    </div>
+  )
+}
+

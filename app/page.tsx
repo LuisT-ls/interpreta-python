@@ -1,33 +1,30 @@
 'use client'
 
 import { useState, useRef, useCallback } from 'react'
+import JSZip from 'jszip'
 import { usePyodide } from '@/hooks/usePyodide'
 import { useLayout } from '@/hooks/useLayout'
+import { useEditorTabs } from '@/hooks/useEditorTabs'
 import { PythonEditor } from '@/components/PythonEditor'
 import { OutputTerminal } from '@/components/OutputTerminal'
 import { ThemeToggle } from '@/components/ThemeToggle'
 import { LayoutSelector } from '@/components/LayoutSelector'
-
-const DEFAULT_CODE = `# Bem-vindo ao Interpretador Python Web!
-# Digite seu código Python aqui e clique em "Executar Código"
-
-print("Olá, mundo!")
-print("Python está funcionando! 🐍")
-
-# Exemplo: calcular a soma de números
-numeros = [1, 2, 3, 4, 5]
-soma = sum(numeros)
-print(f"A soma de {numeros} é {soma}")
-
-# Exemplo: loop
-for i in range(3):
-    print(f"Contagem: {i}")`
+import { EditorTabs } from '@/components/EditorTabs'
+import { ExportMenu } from '@/components/ExportMenu'
 
 export default function Home() {
-  const [code, setCode] = useState(DEFAULT_CODE)
-  const [output, setOutput] = useState('')
+  const {
+    tabs,
+    activeTabId,
+    activeTab,
+    setActiveTabId,
+    createNewTab,
+    closeTab,
+    updateTabCode,
+    updateTabOutput,
+  } = useEditorTabs()
+
   const [isExecuting, setIsExecuting] = useState(false)
-  const [hasError, setHasError] = useState(false)
   const outputBufferRef = useRef<string[]>([])
   
   // Estados para controle de input inline no terminal
@@ -42,18 +39,39 @@ export default function Home() {
   // Referência para o input de arquivo (oculto)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
-  // Função para exportar o código como arquivo .py
-  const exportCode = () => {
-    const blob = new Blob([code], { type: 'text/x-python' })
+  // Função para exportar apenas a aba atual como arquivo .py
+  const exportCurrentTab = useCallback(() => {
+    const blob = new Blob([activeTab.code], { type: 'text/x-python' })
     const url = URL.createObjectURL(blob)
     const link = document.createElement('a')
     link.href = url
-    link.download = 'codigo.py'
+    link.download = activeTab.name
     document.body.appendChild(link)
     link.click()
     document.body.removeChild(link)
     URL.revokeObjectURL(url)
-  }
+  }, [activeTab])
+
+  // Função para exportar todas as abas como arquivo .zip
+  const exportAllTabs = useCallback(async () => {
+    const zip = new JSZip()
+    
+    // Adicionar cada aba como um arquivo .py no ZIP
+    tabs.forEach((tab) => {
+      zip.file(tab.name, tab.code)
+    })
+
+    // Gerar o arquivo ZIP
+    const blob = await zip.generateAsync({ type: 'blob' })
+    const url = URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = url
+    link.download = 'editores.zip'
+    document.body.appendChild(link)
+    link.click()
+    document.body.removeChild(link)
+    URL.revokeObjectURL(url)
+  }, [tabs])
 
   // Função para importar código de um arquivo .py
   const importCode = () => {
@@ -75,7 +93,7 @@ export default function Home() {
     reader.onload = (e) => {
       const content = e.target?.result as string
       if (content) {
-        setCode(content)
+        updateTabCode(activeTabId, content)
       }
     }
     reader.onerror = () => {
@@ -91,8 +109,7 @@ export default function Home() {
     if (!pyodide || loading || isExecuting) return
 
     setIsExecuting(true)
-    setOutput('')
-    setHasError(false)
+    updateTabOutput(activeTabId, '', false)
     outputBufferRef.current = []
 
     try {
@@ -122,7 +139,7 @@ export default function Home() {
         try {
           if (text && typeof text === 'string' && text.length > 0) {
             outputBufferRef.current.push(text + '\n')
-            setHasError(true)
+            // O erro será marcado quando atualizarmos a saída
           }
         } catch (e) {
           // Ignorar erros no handler para evitar loops
@@ -180,7 +197,7 @@ builtins.input = input
 
       // Executar o código de forma assíncrona para suportar input()
       // Separar imports do resto do código de forma mais robusta
-      const lines = code.split('\n')
+      const lines = activeTab.code.split('\n')
       const imports: string[] = []
       const codeLines: string[] = []
       
@@ -283,7 +300,7 @@ builtins.input = input
 
       // Não usar trim() para preservar quebras de linha no início/fim se necessário
       // Apenas remover espaços em branco extras, mas manter quebras de linha
-      setOutput(finalOutput || 'Código executado com sucesso!')
+      updateTabOutput(activeTabId, finalOutput || 'Código executado com sucesso!', false)
     } catch (err) {
       // Capturar qualquer saída que possa ter sido gerada antes do erro
       const capturedOutput = outputBufferRef.current.join('')
@@ -310,8 +327,7 @@ builtins.input = input
         errorOutput += `Erro: ${errorMessage}`
       }
       
-      setOutput(errorOutput || 'Erro ao executar código')
-      setHasError(true)
+      updateTabOutput(activeTabId, errorOutput || 'Erro ao executar código', true)
     } finally {
       setIsExecuting(false)
       // Não limpar o buffer aqui, pode conter informações úteis
@@ -394,17 +410,27 @@ builtins.input = input
               >
                 {/* Editor Section */}
                 <div
-                  className={`bg-white dark:bg-gray-900 rounded-lg shadow-lg border border-gray-200 dark:border-gray-800 overflow-hidden ${
+                  className={`bg-white dark:bg-gray-900 rounded-lg shadow-lg border border-gray-200 dark:border-gray-800 overflow-hidden flex flex-col ${
                     layout === 'top' ? 'order-2' : layout === 'left' ? 'lg:order-2 order-1' : 'order-1'
                   }`}
                 >
-                  <div className="h-[400px] sm:h-[500px] lg:h-[600px]">
+                  {/* Tabs */}
+                  <EditorTabs
+                    tabs={tabs}
+                    activeTabId={activeTabId}
+                    onTabClick={setActiveTabId}
+                    onTabClose={closeTab}
+                    onNewTab={createNewTab}
+                    onImport={importCode}
+                    onExportCurrent={exportCurrentTab}
+                    onExportAll={exportAllTabs}
+                  />
+                  <div className="flex-1 h-[400px] sm:h-[500px] lg:h-[600px]">
                     <PythonEditor
-                      code={code}
-                      onChange={setCode}
+                      code={activeTab.code}
+                      onChange={(newCode) => updateTabCode(activeTabId, newCode)}
                       disabled={loading || isExecuting}
-                      onImport={importCode}
-                      onExport={exportCode}
+                      fileName={activeTab.name}
                     />
                   </div>
                 </div>
@@ -417,8 +443,8 @@ builtins.input = input
                 >
                   <div className="h-[300px] sm:h-[400px] lg:h-[600px]">
                     <OutputTerminal
-                      output={output}
-                      isError={hasError}
+                      output={activeTab.output}
+                      isError={activeTab.hasError}
                       isLoading={loading}
                       isWaitingInput={isWaitingInput}
                       inputPrompt={inputPrompt}
