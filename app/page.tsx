@@ -519,6 +519,10 @@ builtins.input = input
       
       const errorMessage = err instanceof Error ? err.message : String(err)
       
+      // Limpar a string do erro para remover duplicações e formatações indesejadas
+      // Remover "PythonError: " se presente no início
+      let cleanErrorStr = errorStr.replace(/^PythonError:\s*/i, '').trim()
+      
       // Parsear o traceback para extrair informações do erro
       let parsedErrorLine: number | null = null
       let errorType = 'Erro'
@@ -526,7 +530,7 @@ builtins.input = input
       
       // Tentar extrair a linha do erro do traceback
       // Formato típico: File "<exec>", line X, in <module> ou File "<exec>", line X, in _run_code
-      const lineMatch = errorStr.match(/File\s+["<]exec[">],\s+line\s+(\d+)/i)
+      const lineMatch = cleanErrorStr.match(/File\s+["<]exec[">],\s+line\s+(\d+)/i)
       if (lineMatch) {
         const lineNum = parseInt(lineMatch[1], 10)
         
@@ -568,15 +572,15 @@ builtins.input = input
       
       // Tentar extrair o tipo de erro (NameError, ValueError, etc.)
       // Para SyntaxError, procurar primeiro pois tem formato especial
-      if (errorStr.includes('SyntaxError')) {
+      if (cleanErrorStr.includes('SyntaxError')) {
         errorType = 'SyntaxError'
         // Extrair a mensagem do SyntaxError
-        const syntaxMatch = errorStr.match(/SyntaxError:\s*(.+?)(?:\n|$)/i)
+        const syntaxMatch = cleanErrorStr.match(/SyntaxError:\s*(.+?)(?:\n|$)/i)
         if (syntaxMatch) {
           errorDetails = syntaxMatch[1].trim()
         } else {
           // Tentar extrair de outra forma
-          const typeIndex = errorStr.indexOf('SyntaxError')
+          const typeIndex = cleanErrorStr.indexOf('SyntaxError')
           const afterType = errorStr.substring(typeIndex + 'SyntaxError'.length).trim()
           if (afterType.startsWith(':')) {
             errorDetails = afterType.substring(1).trim().split('\n')[0]
@@ -585,7 +589,7 @@ builtins.input = input
           }
         }
       } else {
-        const errorTypeMatch = errorStr.match(/(\w+Error|Exception):\s*(.+?)(?:\n|$)/i)
+        const errorTypeMatch = cleanErrorStr.match(/(\w+Error|Exception):\s*(.+?)(?:\n|$)/i)
         if (errorTypeMatch) {
           errorType = errorTypeMatch[1]
           errorDetails = errorTypeMatch[2].trim()
@@ -593,16 +597,16 @@ builtins.input = input
           // Tentar encontrar o tipo de erro de outra forma
           const commonErrors = ['NameError', 'TypeError', 'ValueError', 'IndentationError', 'AttributeError', 'KeyError', 'IndexError', 'ZeroDivisionError', 'FileNotFoundError']
           for (const errType of commonErrors) {
-            if (errorStr.includes(errType)) {
+            if (cleanErrorStr.includes(errType)) {
               errorType = errType
               // Extrair a mensagem após o tipo de erro
-              const typeIndex = errorStr.indexOf(errType)
-              const afterType = errorStr.substring(typeIndex + errType.length).trim()
+              const typeIndex = cleanErrorStr.indexOf(errType)
+              const afterType = cleanErrorStr.substring(typeIndex + errType.length).trim()
               if (afterType.startsWith(':')) {
                 errorDetails = afterType.substring(1).trim().split('\n')[0]
               } else {
                 // Tentar extrair da mensagem completa
-                const messageMatch = errorStr.match(new RegExp(`${errType}[^\\n]*:([^\\n]+)`, 'i'))
+                const messageMatch = cleanErrorStr.match(new RegExp(`${errType}[^\\n]*:([^\\n]+)`, 'i'))
                 if (messageMatch) {
                   errorDetails = messageMatch[1].trim()
                 }
@@ -621,7 +625,7 @@ builtins.input = input
           errorDetails = simpleMessage
         } else {
           // Tentar extrair da string completa do erro
-          const lastLine = errorStr.split('\n').filter(line => line.trim()).pop() || ''
+          const lastLine = cleanErrorStr.split('\n').filter(line => line.trim()).pop() || ''
           if (lastLine.includes(':')) {
             const parts = lastLine.split(':')
             if (parts.length > 1) {
@@ -646,56 +650,102 @@ builtins.input = input
         errorOutput = capturedOutput + '\n'
       }
       
-      // Para SyntaxError, exibir de forma mais direta
+      // Para SyntaxError, exibir de forma mais direta com traceback
       if (errorType === 'SyntaxError') {
-        // Formato: SyntaxError: mensagem (linha X)
-        if (parsedErrorLine) {
-          errorOutput += `${errorType}: ${errorDetails} (linha ${parsedErrorLine})\n`
-        } else {
+        // Formatar traceback no estilo Python
+        errorOutput += 'Traceback (most recent call last):\n'
+        
+        // Determinar a linha do erro
+        let errorLineNumber: number | null = parsedErrorLine
+        if (!errorLineNumber) {
           // Tentar extrair a linha do traceback original se disponível
-          const tracebackLineMatch = errorStr.match(/File\s+["<]exec[">],\s+line\s+(\d+)/i)
+          const tracebackLineMatch = cleanErrorStr.match(/File\s+["<]exec[">],\s+line\s+(\d+)/i)
           if (tracebackLineMatch) {
-            const tracebackLine = tracebackLineMatch[1]
-            errorOutput += `${errorType}: ${errorDetails} (linha ${tracebackLine})\n`
-          } else {
-            errorOutput += `${errorType}: ${errorDetails}\n`
+            const lineNum = parseInt(tracebackLineMatch[1], 10)
+            // Tentar mapear usando o mapeamento
+            const mappedLine = lineMappingRef.current.get(lineNum)
+            if (mappedLine) {
+              errorLineNumber = mappedLine
+            } else {
+              errorLineNumber = lineNum
+            }
           }
         }
-      } else {
-        // Para outros erros, usar o formato completo com traceback
-        // Formatar traceback no estilo Python (não duplicar se já estiver no errorStr)
-        if (!errorStr.includes('Traceback (most recent call last):')) {
-          errorOutput += 'Traceback (most recent call last):\n'
-        }
         
-        if (parsedErrorLine) {
+        if (errorLineNumber) {
           // Obter a linha do código que causou o erro
           const codeLines = activeTab.code.split('\n')
-          const errorCodeLine = codeLines[parsedErrorLine - 1]
+          const errorCodeLine = codeLines[errorLineNumber - 1]
+          
+          errorOutput += `  File "${activeTab.name}", line ${errorLineNumber}, in <module>\n`
           
           if (errorCodeLine !== undefined && errorCodeLine.trim().length > 0) {
-            errorOutput += `  File "${activeTab.name}", line ${parsedErrorLine}, in <module>\n`
+            // Mostrar a linha do código
+            const trimmedLine = errorCodeLine.trimStart()
+            errorOutput += `    ${trimmedLine}\n`
+          }
+        } else {
+          errorOutput += `  File "${activeTab.name}", line ?, in <module>\n`
+        }
+        
+        // Adicionar o tipo de erro e a mensagem
+        errorOutput += `${errorType}: ${errorDetails}\n`
+      } else {
+        // Para outros erros (NameError, TypeError, etc.), usar o formato completo com traceback
+        // Formatar traceback no estilo Python
+        errorOutput += 'Traceback (most recent call last):\n'
+        
+        // Determinar a linha do erro
+        let errorLineNumber: number | null = parsedErrorLine
+        if (!errorLineNumber) {
+          // Tentar extrair a linha do traceback original se disponível
+          const tracebackLineMatch = cleanErrorStr.match(/File\s+["<]exec[">],\s+line\s+(\d+)/i)
+          if (tracebackLineMatch) {
+            const lineNum = parseInt(tracebackLineMatch[1], 10)
+            // Tentar mapear usando o mapeamento
+            const mappedLine = lineMappingRef.current.get(lineNum)
+            if (mappedLine) {
+              errorLineNumber = mappedLine
+            } else {
+              // Procurar a linha mais próxima
+              let closestLine: number | null = null
+              let minDiff = Infinity
+              
+              for (const [transformedLine, originalLine] of lineMappingRef.current.entries()) {
+                const diff = Math.abs(transformedLine - lineNum)
+                if (diff < minDiff) {
+                  minDiff = diff
+                  closestLine = originalLine
+                }
+              }
+              
+              if (closestLine !== null && minDiff <= 2) {
+                errorLineNumber = closestLine
+              } else {
+                errorLineNumber = lineNum
+              }
+            }
+          }
+        }
+        
+        if (errorLineNumber) {
+          // Obter a linha do código que causou o erro
+          const codeLines = activeTab.code.split('\n')
+          const errorCodeLine = codeLines[errorLineNumber - 1]
+          
+          errorOutput += `  File "${activeTab.name}", line ${errorLineNumber}, in <module>\n`
+          
+          if (errorCodeLine !== undefined && errorCodeLine.trim().length > 0) {
             // Mostrar a linha do código (remover espaços iniciais extras, mas manter indentação relativa)
             const trimmedLine = errorCodeLine.trimStart()
             errorOutput += `    ${trimmedLine}\n`
-          } else {
-            errorOutput += `  File "${activeTab.name}", line ${parsedErrorLine}, in <module>\n`
           }
         } else {
-          // Tentar extrair a linha do traceback original se disponível
-          const tracebackLineMatch = errorStr.match(/File\s+["<]exec[">],\s+line\s+(\d+)/i)
-          if (tracebackLineMatch) {
-            const tracebackLine = tracebackLineMatch[1]
-            errorOutput += `  File "${activeTab.name}", line ${tracebackLine}, in <module>\n`
-          } else {
-            errorOutput += `  File "${activeTab.name}", line ?, in <module>\n`
-          }
+          errorOutput += `  File "${activeTab.name}", line ?, in <module>\n`
         }
         
-        // Adicionar o tipo de erro e a mensagem (garantir que não duplique)
-        if (!errorOutput.includes(`${errorType}:`)) {
-          errorOutput += `${errorType}: ${errorDetails}\n`
-        }
+        // Adicionar o tipo de erro e a mensagem
+        errorOutput += `${errorType}: ${errorDetails}\n`
       }
       
       // Adicionar mensagem de saída do processo
