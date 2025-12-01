@@ -1,6 +1,6 @@
 'use client'
 
-import { useRef, useEffect } from 'react'
+import { useRef, useEffect, useMemo } from 'react'
 
 interface PythonEditorProps {
   code: string
@@ -10,16 +10,190 @@ interface PythonEditorProps {
   errorLine?: number | null
 }
 
+// Função para fazer syntax highlighting do código Python
+function highlightPythonCode(code: string): string {
+  if (!code) return ''
+  
+  // Palavras-chave do Python
+  const keywords = new Set([
+    'and', 'as', 'assert', 'break', 'class', 'continue', 'def', 'del', 'elif', 'else',
+    'except', 'False', 'finally', 'for', 'from', 'global', 'if', 'import', 'in', 'is',
+    'lambda', 'None', 'nonlocal', 'not', 'or', 'pass', 'raise', 'return', 'True', 'try',
+    'while', 'with', 'yield', 'async', 'await'
+  ])
+  
+  // Funções built-in comuns
+  const builtins = new Set([
+    'abs', 'all', 'any', 'ascii', 'bin', 'bool', 'bytearray', 'bytes', 'callable', 'chr',
+    'classmethod', 'compile', 'complex', 'delattr', 'dict', 'dir', 'divmod', 'enumerate',
+    'eval', 'exec', 'filter', 'float', 'format', 'frozenset', 'getattr', 'globals', 'hasattr',
+    'hash', 'help', 'hex', 'id', 'input', 'int', 'isinstance', 'issubclass', 'iter', 'len',
+    'list', 'locals', 'map', 'max', 'memoryview', 'min', 'next', 'object', 'oct', 'open',
+    'ord', 'pow', 'print', 'property', 'range', 'repr', 'reversed', 'round', 'set', 'setattr',
+    'slice', 'sorted', 'staticmethod', 'str', 'sum', 'super', 'tuple', 'type', 'vars', 'zip'
+  ])
+  
+  const lines = code.split('\n')
+  const highlightedLines: string[] = []
+  
+  for (const line of lines) {
+    let result = ''
+    let i = 0
+    let inString = false
+    let stringChar = ''
+    let inComment = false
+    
+    while (i < line.length) {
+      const char = line[i]
+      const prevChar = i > 0 ? line[i - 1] : ''
+      
+      // Detectar início de comentário (fora de strings)
+      if (char === '#' && !inString) {
+        inComment = true
+        result += `<span class="text-gray-500 dark:text-gray-400 italic">${line.substring(i)}</span>`
+        break
+      }
+      
+      // Se estamos em um comentário, apenas adicionar
+      if (inComment) {
+        result += char
+        i++
+        continue
+      }
+      
+      // Detectar strings
+      if ((char === '"' || char === "'") && prevChar !== '\\') {
+        if (!inString) {
+          inString = true
+          stringChar = char
+          result += `<span class="text-green-600 dark:text-green-400">${char}`
+        } else if (char === stringChar) {
+          inString = false
+          stringChar = ''
+          result += `${char}</span>`
+        } else {
+          result += char
+        }
+        i++
+        continue
+      }
+      
+      // Se estamos dentro de uma string, apenas adicionar
+      if (inString) {
+        result += char
+        i++
+        continue
+      }
+      
+      // Destacar parênteses, colchetes e chaves
+      if (char === '(' || char === ')') {
+        result += `<span class="text-purple-600 dark:text-purple-400 font-semibold">${char}</span>`
+        i++
+        continue
+      }
+      if (char === '[' || char === ']') {
+        result += `<span class="text-orange-600 dark:text-orange-400 font-semibold">${char}</span>`
+        i++
+        continue
+      }
+      if (char === '{' || char === '}') {
+        result += `<span class="text-pink-600 dark:text-pink-400 font-semibold">${char}</span>`
+        i++
+        continue
+      }
+      
+      // Detectar números
+      if (/\d/.test(char)) {
+        let num = char
+        let j = i + 1
+        while (j < line.length && /[\d.]/.test(line[j])) {
+          num += line[j]
+          j++
+        }
+        result += `<span class="text-blue-600 dark:text-blue-400">${num}</span>`
+        i = j
+        continue
+      }
+      
+      // Detectar palavras (keywords, builtins, variáveis)
+      if (/[a-zA-Z_]/.test(char)) {
+        let word = char
+        let j = i + 1
+        while (j < line.length && /[a-zA-Z0-9_]/.test(line[j])) {
+          word += line[j]
+          j++
+        }
+        
+        if (keywords.has(word)) {
+          result += `<span class="text-blue-800 dark:text-blue-300 font-semibold">${word}</span>`
+        } else if (builtins.has(word)) {
+          result += `<span class="text-cyan-600 dark:text-cyan-400">${word}</span>`
+        } else {
+          result += word
+        }
+        i = j
+        continue
+      }
+      
+      // Detectar operadores
+      if (['=', '+', '-', '*', '/', '%', '<', '>', '!'].includes(char)) {
+        let op = char
+        let j = i + 1
+        // Verificar se é um operador composto
+        if (j < line.length) {
+          const twoCharOp = char + line[j]
+          if (['==', '!=', '<=', '>=', '+=', '-=', '*=', '/=', '%=', '//', '**'].includes(twoCharOp)) {
+            op = twoCharOp
+            j++
+          }
+        }
+        result += `<span class="text-red-600 dark:text-red-400">${op}</span>`
+        i = j
+        continue
+      }
+      
+      // Caractere normal
+      result += char
+      i++
+    }
+    
+    // Fechar string se ainda estiver aberta
+    if (inString) {
+      result += '</span>'
+    }
+    
+    highlightedLines.push(result)
+  }
+  
+  return highlightedLines.join('\n')
+}
+
 export function PythonEditor({ code, onChange, disabled, fileName = 'editor.py', errorLine }: PythonEditorProps) {
   const textareaRef = useRef<HTMLTextAreaElement>(null)
+  const highlightRef = useRef<HTMLDivElement>(null)
+  
+  // Gerar código com syntax highlighting
+  const highlightedCode = useMemo(() => {
+    return highlightPythonCode(code)
+  }, [code])
 
   useEffect(() => {
     const textarea = textareaRef.current
-    if (!textarea) return
+    const highlight = highlightRef.current
+    if (!textarea || !highlight) return
 
     // Auto-resize do textarea
     textarea.style.height = 'auto'
     textarea.style.height = `${textarea.scrollHeight}px`
+    
+    // Sincronizar scroll entre textarea e highlight overlay
+    const syncScroll = () => {
+      highlight.scrollTop = textarea.scrollTop
+      highlight.scrollLeft = textarea.scrollLeft
+    }
+    
+    textarea.addEventListener('scroll', syncScroll)
+    return () => textarea.removeEventListener('scroll', syncScroll)
   }, [code])
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
@@ -227,13 +401,30 @@ export function PythonEditor({ code, onChange, disabled, fileName = 'editor.py',
         </div>
         {/* Editor */}
         <div className="flex-1 relative">
+          {/* Overlay de syntax highlighting */}
+          <div
+            ref={highlightRef}
+            className="absolute inset-0 p-4 font-mono text-sm pointer-events-none overflow-auto whitespace-pre-wrap break-words bg-white dark:bg-gray-900"
+            style={{
+              lineHeight: '20px',
+            }}
+          >
+            {code ? (
+              <div dangerouslySetInnerHTML={{ __html: highlightedCode }} />
+            ) : (
+              <div className="text-gray-400 dark:text-gray-500">
+                Digite seu código Python aqui...
+              </div>
+            )}
+          </div>
+          {/* Textarea transparente para input */}
           <textarea
             ref={textareaRef}
             value={code}
             onChange={(e) => onChange(e.target.value)}
             onKeyDown={handleKeyDown}
             disabled={disabled}
-            className="w-full h-full p-4 bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 font-mono text-sm resize-none focus:outline-none disabled:opacity-50 disabled:cursor-not-allowed"
+            className="relative w-full h-full p-4 bg-transparent text-transparent font-mono text-sm resize-none focus:outline-none disabled:opacity-50 disabled:cursor-not-allowed caret-gray-900 dark:caret-gray-100"
             placeholder="Digite seu código Python aqui..."
             spellCheck={false}
             style={{
@@ -243,7 +434,7 @@ export function PythonEditor({ code, onChange, disabled, fileName = 'editor.py',
           {/* Indicador visual da linha de erro */}
           {errorLine && (
             <div
-              className="absolute left-0 right-0 bg-red-100 dark:bg-red-900/30 border-l-4 border-red-500 pointer-events-none"
+              className="absolute left-0 right-0 bg-red-100 dark:bg-red-900/30 border-l-4 border-red-500 pointer-events-none z-10"
               style={{
                 top: `${(errorLine - 1) * 20 + 16}px`, // 16px é o padding-top
                 height: '20px',
