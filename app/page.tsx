@@ -105,7 +105,48 @@ function parsePyodideError(
   // Formato típico: File "<exec>", line X, in <module>
   // ou: File "<exec>", line X, in _run_code
   // ou: line X (para erros de sintaxe simples)
-  let lineMatch = cleanErrorStr.match(/File\s+["<](?:exec|.*?)[">],\s+line\s+(\d+)/i)
+  // Para IndentationError: "expected an indented block after function definition on line X"
+  
+  // IMPORTANTE: O traceback pode ter múltiplas linhas. Precisamos pegar a linha mais relevante,
+  // que geralmente é a última antes do erro (dentro de _run_code), não a linha do await _run_code()
+  let lineMatch: RegExpMatchArray | null = null
+  
+  // Buscar todas as ocorrências de "File ..., line X"
+  const allLineMatches = cleanErrorStr.matchAll(/File\s+["<](?:exec|.*?)[">],\s+line\s+(\d+)/gi)
+  const lineMatchesArray = Array.from(allLineMatches)
+  
+  if (lineMatchesArray.length > 0) {
+    console.debug('🔍 Linhas encontradas no traceback:', lineMatchesArray.map(m => m[1]))
+    
+    // Se houver múltiplas linhas no traceback, usar a última (mais próxima do erro)
+    // A última linha geralmente é a linha dentro de _run_code onde o erro realmente ocorreu
+    if (lineMatchesArray.length > 1) {
+      // Pegar a última linha do traceback (mais próxima do erro)
+      lineMatch = lineMatchesArray[lineMatchesArray.length - 1]
+      console.debug('✅ Múltiplas linhas no traceback, usando a última (mais próxima do erro):', lineMatch[1])
+    } else {
+      lineMatch = lineMatchesArray[0]
+      console.debug('✅ Linha única no traceback:', lineMatch[1])
+    }
+  }
+  
+  // Para IndentationError, procurar padrão especial: "on line X" ou "after function definition on line X"
+  if (!lineMatch && (isSyntaxError || cleanErrorStr.includes('IndentationError'))) {
+    // Padrão 1: "on line X" ou "at line X"
+    let indentationMatch = cleanErrorStr.match(/(?:on|at)\s+line\s+(\d+)/i)
+    if (!indentationMatch) {
+      // Padrão 2: "after function definition on line X"
+      indentationMatch = cleanErrorStr.match(/after\s+.*?\s+on\s+line\s+(\d+)/i)
+    }
+    if (!indentationMatch) {
+      // Padrão 3: "line X" em qualquer lugar
+      indentationMatch = cleanErrorStr.match(/line\s+(\d+)/i)
+    }
+    if (indentationMatch) {
+      lineMatch = indentationMatch
+      console.debug('✅ Linha extraída de IndentationError:', indentationMatch[1])
+    }
+  }
   
   // Se não encontrou no formato File, tentar formato mais simples (comum em SyntaxError)
   if (!lineMatch) {
@@ -116,15 +157,26 @@ function parsePyodideError(
   if (!lineMatch && error && typeof error === 'object') {
     try {
       // Pyodide pode expor atributos do erro Python diretamente
-      if ('lineno' in error && typeof (error as any).lineno === 'number') {
-        const lineNum = (error as any).lineno
-        if (lineNum > 0) {
-          lineMatch = [`line ${lineNum}`, String(lineNum)]
-        }
-      } else if ('line' in error && typeof (error as any).line === 'number') {
-        const lineNum = (error as any).line
-        if (lineNum > 0) {
-          lineMatch = [`line ${lineNum}`, String(lineNum)]
+      const errorObj = error as any
+      
+      // Tentar diferentes propriedades comuns
+      if (errorObj.lineno !== undefined && typeof errorObj.lineno === 'number' && errorObj.lineno > 0) {
+        lineMatch = [`line ${errorObj.lineno}`, String(errorObj.lineno)]
+      } else if (errorObj.line !== undefined && typeof errorObj.line === 'number' && errorObj.line > 0) {
+        lineMatch = [`line ${errorObj.line}`, String(errorObj.line)]
+      } else if (errorObj.linenumber !== undefined && typeof errorObj.linenumber === 'number' && errorObj.linenumber > 0) {
+        lineMatch = [`line ${errorObj.linenumber}`, String(errorObj.linenumber)]
+      }
+      
+      // Tentar acessar via __traceback__ se disponível
+      if (!lineMatch && errorObj.__traceback__) {
+        try {
+          const tb = errorObj.__traceback__
+          if (tb.tb_lineno !== undefined && typeof tb.tb_lineno === 'number' && tb.tb_lineno > 0) {
+            lineMatch = [`line ${tb.tb_lineno}`, String(tb.tb_lineno)]
+          }
+        } catch {
+          // Ignorar erros ao acessar traceback
         }
       }
     } catch {
@@ -132,16 +184,40 @@ function parsePyodideError(
     }
   }
   
+  // Debug: log para ajudar a identificar problemas
+  if (!lineMatch) {
+    console.debug('⚠️ Não foi possível extrair linha do erro:', {
+      errorStr: cleanErrorStr.substring(0, 500),
+      errorType: typeof error,
+      errorKeys: error && typeof error === 'object' ? Object.keys(error) : null,
+      fullError: error
+    })
+  } else {
+    console.debug('✅ Linha extraída do erro:', {
+      lineNum: parseInt(lineMatch[1], 10),
+      match: lineMatch[0],
+      hasMapping: lineMapping !== undefined && lineMapping !== null && lineMapping.size > 0
+    })
+  }
+  
   if (lineMatch) {
     const lineNum = parseInt(lineMatch[1], 10)
+    console.debug('🔍 Tentando mapear linha do erro:', {
+      lineNum,
+      hasMapping: lineMapping !== undefined && lineMapping !== null && lineMapping.size > 0,
+      mappingSize: lineMapping?.size || 0,
+      mappingEntries: lineMapping ? Array.from(lineMapping.entries()) : []
+    })
     
     // Se temos um mapeamento de linhas (para código transformado), usar
-    if (lineMapping) {
+    if (lineMapping && lineMapping.size > 0) {
       const mappedLine = lineMapping.get(lineNum)
       if (mappedLine !== undefined) {
         errorLine = mappedLine
+        console.debug('✅ Linha mapeada diretamente:', { lineNum, mappedLine })
       } else {
-        // Tentar encontrar a linha mais próxima
+        console.debug('⚠️ Linha não encontrada no mapeamento direto, tentando linha mais próxima...')
+        // Tentar encontrar a linha mais próxima (dentro de 5 linhas)
         let closestLine: number | null = null
         let minDiff = Infinity
         
@@ -153,10 +229,12 @@ function parsePyodideError(
           }
         }
         
-        // Usar linha mais próxima se a diferença for pequena (≤3 linhas)
-        if (closestLine !== null && minDiff <= 3) {
+        // Usar linha mais próxima se a diferença for pequena (≤5 linhas)
+        if (closestLine !== null && minDiff <= 5) {
           errorLine = closestLine
+          console.debug('✅ Linha encontrada via linha mais próxima:', { lineNum, closestLine, minDiff })
         } else {
+          console.debug('⚠️ Linha mais próxima muito distante, tentando cálculo direto...', { lineNum, closestLine, minDiff })
           // Fallback: calcular baseado na estrutura do código
           const codeLines = originalCode.split('\n')
           const importsCount = codeLines.filter(line => {
@@ -164,10 +242,16 @@ function parsePyodideError(
             return trimmed.startsWith('import ') || trimmed.startsWith('from ')
           }).length
           
-          const baseOffset = importsCount > 0 ? importsCount + 2 : 2
+          // Calcular offset baseado na estrutura do código transformado
+          // Estrutura: imports (se houver) + linha vazia (se houver imports) + def _run_code() + código indentado
+          const baseOffset = importsCount > 0 ? importsCount + 2 : 1 // +1 para "async def _run_code():"
           
           if (lineNum > baseOffset) {
-            const codeLineIndex = lineNum - baseOffset
+            // A linha do erro está dentro do código dentro de _run_code
+            const codeLineIndex = lineNum - baseOffset - 1 // -1 porque a primeira linha dentro de _run_code é baseOffset + 1
+            
+            // Mapear codeLineIndex para linha original
+            // Contar todas as linhas (incluindo vazias), mas pular imports
             let codeLineCounter = 0
             let originalLineCounter = 1
             
@@ -175,19 +259,13 @@ function parsePyodideError(
               const line = codeLines[i]
               const trimmed = line.trim()
               
-              // Pular linhas vazias no início
-              if (trimmed.length === 0 && importsCount === 0 && codeLineCounter === 0) {
-                originalLineCounter++
-                continue
-              }
-              
-              // Pular imports
+              // Pular apenas imports
               if (trimmed.startsWith('import ') || trimmed.startsWith('from ')) {
                 originalLineCounter++
                 continue
               }
               
-              // Esta é uma linha de código
+              // Esta é uma linha de código (pode ser vazia, comentário, etc.)
               if (codeLineCounter === codeLineIndex) {
                 errorLine = originalLineCounter
                 break
@@ -198,15 +276,74 @@ function parsePyodideError(
             }
           }
           
-          // Último fallback: usar a linha diretamente
-          if (!errorLine && lineNum > 0 && lineNum <= codeLines.length) {
-            errorLine = lineNum
+          // Se ainda não encontrou, tentar usar a linha diretamente (último recurso)
+          if (!errorLine && lineNum > 0) {
+            const codeLines = originalCode.split('\n')
+            const importsCount = codeLines.filter(line => {
+              const trimmed = line.trim()
+              return trimmed.startsWith('import ') || trimmed.startsWith('from ')
+            }).length
+            
+            // Calcular offset baseado na estrutura do código transformado
+            // Estrutura: imports (se houver) + linha vazia (se houver imports) + def _run_code() + código indentado
+            const baseOffset = importsCount > 0 ? importsCount + 2 : 1
+            
+            // Se a linha do erro está dentro do código dentro de _run_code
+            if (lineNum > baseOffset) {
+              const codeLineIndex = lineNum - baseOffset - 1
+              
+              // Mapear diretamente: codeLineIndex -> linha original
+              // Contar todas as linhas (incluindo vazias), mas pular imports
+              let codeLineCounter = 0
+              let originalLineCounter = 1
+              
+              for (let i = 0; i < codeLines.length; i++) {
+                const line = codeLines[i]
+                const trimmed = line.trim()
+                
+                // Pular apenas imports
+                if (trimmed.startsWith('import ') || trimmed.startsWith('from ')) {
+                  originalLineCounter++
+                  continue
+                }
+                
+                // Esta é uma linha de código
+                if (codeLineCounter === codeLineIndex) {
+                  errorLine = originalLineCounter
+                  console.debug('✅ Linha encontrada via fallback direto:', { codeLineIndex, originalLineCounter })
+                  break
+                }
+                
+                codeLineCounter++
+                originalLineCounter++
+              }
+            }
+            
+            // Último recurso: usar a linha diretamente se estiver no range
+            if (!errorLine && lineNum > 0 && lineNum <= codeLines.length) {
+              errorLine = lineNum
+              console.debug('⚠️ Usando linha diretamente como último recurso:', lineNum)
+            }
           }
         }
       }
     } else {
-      // Sem mapeamento, usar linha diretamente
-      errorLine = lineNum
+      // Sem mapeamento, tentar calcular baseado na estrutura
+      const codeLines = originalCode.split('\n')
+      const importsCount = codeLines.filter(line => {
+        const trimmed = line.trim()
+        return trimmed.startsWith('import ') || trimmed.startsWith('from ')
+      }).length
+      
+      // Se a linha está dentro de um range razoável, ajustar
+      if (lineNum > importsCount && lineNum <= codeLines.length + importsCount) {
+        errorLine = lineNum - importsCount
+        if (errorLine < 1) errorLine = 1
+        if (errorLine > codeLines.length) errorLine = codeLines.length
+      } else if (lineNum > 0 && lineNum <= codeLines.length) {
+        // Usar diretamente se estiver no range
+        errorLine = lineNum
+      }
     }
   }
   
@@ -817,30 +954,22 @@ builtins.input = input
       const importsCode = imports.length > 0 ? imports.join('\n') + '\n\n' : ''
       
       // Criar mapeamento de linhas: linha no código transformado -> linha no código original
-      // Primeiro, criar um mapa de codeLines index -> linha original
+      // IMPORTANTE: Mapear TODAS as linhas, incluindo vazias e comentários
       const codeLineToOriginalLine = new Map<number, number>()
       let originalLineNum = 1
       let codeLineCounter = 0
-      let skippedEmptyAtStart = false
       
       for (let i = 0; i < lines.length; i++) {
         const originalLine = lines[i]
         const trimmed = originalLine.trim()
         
-        // Pular linhas vazias no início (apenas uma vez)
-        if (trimmed.length === 0 && !skippedEmptyAtStart && imports.length === 0 && codeLineCounter === 0) {
-          skippedEmptyAtStart = true
-          originalLineNum++
-          continue
-        }
-        
-        // Pular imports
+        // Pular apenas imports (não pular linhas vazias ou comentários)
         if (trimmed.startsWith('import ') || trimmed.startsWith('from ')) {
           originalLineNum++
           continue
         }
         
-        // Esta é uma linha de código (mesmo que seja vazia depois dos imports)
+        // Mapear TODAS as outras linhas (incluindo vazias, comentários, etc.)
         codeLineToOriginalLine.set(codeLineCounter, originalLineNum)
         codeLineCounter++
         originalLineNum++
@@ -870,15 +999,21 @@ builtins.input = input
         const originalLine = codeLineToOriginalLine.get(codeIndex)
         if (originalLine !== undefined) {
           lineMappingRef.current.set(transformedLineNum, originalLine)
-          console.log(`✅ Mapeando linha transformada ${transformedLineNum} -> linha original ${originalLine} (codeIndex: ${codeIndex})`)
+          console.log(`✅ Mapeando linha transformada ${transformedLineNum} -> linha original ${originalLine} (codeIndex: ${codeIndex}, linha: "${line.substring(0, 50)}")`)
         } else {
           console.warn(`⚠️ Não encontrou mapeamento para codeIndex ${codeIndex} (total codeLines: ${codeLinesArray.length}, total mapeamento: ${codeLineToOriginalLine.size})`)
+          // Tentar usar o codeIndex + 1 como fallback (assumindo que codeIndex começa em 0)
+          const fallbackLine = codeIndex + 1
+          if (fallbackLine <= lines.length) {
+            lineMappingRef.current.set(transformedLineNum, fallbackLine)
+            console.log(`⚠️ Usando fallback: linha transformada ${transformedLineNum} -> linha original ${fallbackLine}`)
+          }
         }
         
-        // Incrementar após mapear
+        // Incrementar após mapear (sempre, mesmo para linhas vazias)
         transformedLineNum++
         
-        // Não indentar linhas vazias
+        // Não indentar linhas vazias, mas ainda contar no mapeamento
         if (line.trim().length === 0) {
           return ''
         }
@@ -907,7 +1042,7 @@ builtins.input = input
         return
       }
 
-      const result = await pyodide.runPythonAsync(wrappedCode).catch((err) => {
+      const result = await pyodide.runPythonAsync(wrappedCode).catch(async (err) => {
         // Se a execução foi cancelada, não tratar como erro normal
         if (executionAbortedRef.current) {
           return null
@@ -920,6 +1055,23 @@ builtins.input = input
             return null
           }
         }
+        
+        // Tentar obter traceback completo do Pyodide se disponível
+        try {
+          // Pyodide pode ter um método para obter o traceback completo
+          if (pyodide && typeof (pyodide as any).getException === 'function') {
+            const fullTraceback = (pyodide as any).getException()
+            if (fullTraceback) {
+              // Criar um novo erro com traceback completo
+              const enhancedError = new Error(String(err))
+              ;(enhancedError as any).pyodideTraceback = fullTraceback
+              throw enhancedError
+            }
+          }
+        } catch {
+          // Se falhar, continuar com o erro original
+        }
+        
         throw err
       })
 
@@ -989,6 +1141,18 @@ builtins.input = input
       // Capturar qualquer saída que possa ter sido gerada antes do erro
       const capturedOutput = outputBufferRef.current.join('')
       
+      // Debug: log do erro antes de parsear
+      console.log('=== ERRO CAPTURADO ===')
+      console.log('Erro:', err)
+      console.log('String do erro:', String(err))
+      console.log('Tipo do erro:', typeof err)
+      if (err && typeof err === 'object') {
+        console.log('Chaves do erro:', Object.keys(err))
+        console.log('Erro completo:', JSON.stringify(err, null, 2))
+      }
+      console.log('Mapeamento disponível:', Array.from(lineMappingRef.current.entries()))
+      console.log('=====================')
+      
       // Usar a função utilitária para parsear o erro
       const parsedError = parsePyodideError(
         err,
@@ -996,6 +1160,14 @@ builtins.input = input
         activeTab.name,
         lineMappingRef.current
       )
+      
+      // Debug: log do resultado do parsing
+      console.log('=== RESULTADO DO PARSING ===')
+      console.log('Tipo:', parsedError.type)
+      console.log('Linha:', parsedError.line)
+      console.log('Mensagem:', parsedError.message)
+      console.log('É erro de sintaxe:', parsedError.isSyntaxError)
+      console.log('===========================')
       
       // Definir a linha do erro no editor
       setErrorLine(parsedError.line)
