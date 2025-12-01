@@ -36,6 +36,46 @@ export function PythonEditor({ code, onChange, disabled, fileName = 'editor.py',
       "'": "'",
     }
 
+    // Tratamento para Enter - indentação automática
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault()
+      
+      // Obter o código até a posição do cursor
+      const codeBeforeCursor = code.substring(0, start)
+      const codeAfterCursor = code.substring(end)
+      
+      // Encontrar a linha atual
+      const lines = codeBeforeCursor.split('\n')
+      const currentLine = lines[lines.length - 1]
+      
+      // Calcular a indentação da linha atual (espaços no início)
+      const indentMatch = currentLine.match(/^(\s*)/)
+      const currentIndent = indentMatch ? indentMatch[1] : ''
+      
+      // Remover espaços em branco do final da linha para verificar se termina com ':'
+      const trimmedLine = currentLine.trim()
+      const endsWithColon = trimmedLine.endsWith(':')
+      
+      // Calcular a indentação da nova linha
+      let newIndent = currentIndent
+      if (endsWithColon) {
+        // Se a linha termina com ':', adicionar 4 espaços de indentação
+        newIndent = currentIndent + '    '
+      }
+      // Se não termina com ':', manter a mesma indentação da linha atual
+      
+      // Inserir nova linha com indentação
+      const newCode = codeBeforeCursor + '\n' + newIndent + codeAfterCursor
+      onChange(newCode)
+      
+      // Posicionar o cursor na nova linha com a indentação
+      setTimeout(() => {
+        const newCursorPos = start + 1 + newIndent.length
+        textarea.selectionStart = textarea.selectionEnd = newCursorPos
+      }, 0)
+      return
+    }
+
     // Tratamento para Tab
     if (e.key === 'Tab') {
       e.preventDefault()
