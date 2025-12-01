@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useRef, useCallback } from 'react'
+import { useState, useRef, useCallback, useEffect } from 'react'
 import JSZip from 'jszip'
 import { usePyodide } from '@/hooks/usePyodide'
 import { useLayout } from '@/hooks/useLayout'
@@ -11,6 +11,286 @@ import { ThemeToggle } from '@/components/ThemeToggle'
 import { LayoutSelector } from '@/components/LayoutSelector'
 import { EditorTabs } from '@/components/EditorTabs'
 import { ExportMenu } from '@/components/ExportMenu'
+
+/**
+ * Interface para o resultado do parsing de erros do Pyodide
+ */
+interface ParsedError {
+  type: string
+  line: number | null
+  message: string
+  formattedTraceback: string
+  isSyntaxError: boolean
+}
+
+/**
+ * Lista completa de tipos de erro Python suportados
+ */
+const PYTHON_ERROR_TYPES = [
+  // Erros de sintaxe
+  'SyntaxError',
+  'IndentationError',
+  'TabError',
+  // Erros de nome
+  'NameError',
+  'UnboundLocalError',
+  // Erros de tipo e valor
+  'TypeError',
+  'ValueError',
+  'AttributeError',
+  'IndexError',
+  'KeyError',
+  'OverflowError',
+  'ZeroDivisionError',
+  // Erros de importação
+  'ImportError',
+  'ModuleNotFoundError',
+  // Erros de IO
+  'FileNotFoundError',
+  'PermissionError',
+  'OSError',
+  'IOError',
+  // Erros gerais
+  'AssertionError',
+  'RuntimeError',
+  'RecursionError',
+  'MemoryError',
+  'NotImplementedError',
+  // Erros específicos do Pyodide
+  'PyodideError',
+  'JsException',
+] as const
+
+/**
+ * Função utilitária para parsear erros retornados pelo Pyodide
+ * Extrai tipo, linha, mensagem e formata o traceback no estilo Python
+ */
+function parsePyodideError(
+  error: any,
+  originalCode: string,
+  fileName: string,
+  lineMapping?: Map<number, number>
+): ParsedError {
+  const errorStr = String(error)
+  const errorMessage = error instanceof Error ? error.message : errorStr
+  
+  // Limpar a string do erro removendo prefixos comuns
+  let cleanErrorStr = errorStr
+    .replace(/^PythonError:\s*/i, '')
+    .replace(/^Error:\s*/i, '')
+    .trim()
+  
+  // Inicializar valores padrão
+  let errorType = 'Error'
+  let errorLine: number | null = null
+  let errorDetails = errorMessage
+  let isSyntaxError = false
+  
+  // 1. Detectar tipo de erro
+  // Verificar cada tipo de erro conhecido
+  for (const errType of PYTHON_ERROR_TYPES) {
+    const regex = new RegExp(`\\b${errType}\\b`, 'i')
+    if (regex.test(cleanErrorStr)) {
+      errorType = errType
+      
+      // Marcar erros de sintaxe
+      if (['SyntaxError', 'IndentationError', 'TabError'].includes(errType)) {
+        isSyntaxError = true
+      }
+      break
+    }
+  }
+  
+  // 2. Extrair linha do erro do traceback
+  // Formato típico: File "<exec>", line X, in <module>
+  // ou: File "<exec>", line X, in _run_code
+  // ou: line X (para erros de sintaxe simples)
+  let lineMatch = cleanErrorStr.match(/File\s+["<](?:exec|.*?)[">],\s+line\s+(\d+)/i)
+  
+  // Se não encontrou no formato File, tentar formato mais simples (comum em SyntaxError)
+  if (!lineMatch) {
+    lineMatch = cleanErrorStr.match(/line\s+(\d+)/i)
+  }
+  
+  // Tentar extrair de objetos de erro do Python diretamente
+  if (!lineMatch && error && typeof error === 'object') {
+    try {
+      // Pyodide pode expor atributos do erro Python diretamente
+      if ('lineno' in error && typeof (error as any).lineno === 'number') {
+        const lineNum = (error as any).lineno
+        if (lineNum > 0) {
+          lineMatch = [`line ${lineNum}`, String(lineNum)]
+        }
+      } else if ('line' in error && typeof (error as any).line === 'number') {
+        const lineNum = (error as any).line
+        if (lineNum > 0) {
+          lineMatch = [`line ${lineNum}`, String(lineNum)]
+        }
+      }
+    } catch {
+      // Ignorar erros ao acessar propriedades
+    }
+  }
+  
+  if (lineMatch) {
+    const lineNum = parseInt(lineMatch[1], 10)
+    
+    // Se temos um mapeamento de linhas (para código transformado), usar
+    if (lineMapping) {
+      const mappedLine = lineMapping.get(lineNum)
+      if (mappedLine !== undefined) {
+        errorLine = mappedLine
+      } else {
+        // Tentar encontrar a linha mais próxima
+        let closestLine: number | null = null
+        let minDiff = Infinity
+        
+        for (const [transformedLine, originalLine] of lineMapping.entries()) {
+          const diff = Math.abs(transformedLine - lineNum)
+          if (diff < minDiff) {
+            minDiff = diff
+            closestLine = originalLine
+          }
+        }
+        
+        // Usar linha mais próxima se a diferença for pequena (≤3 linhas)
+        if (closestLine !== null && minDiff <= 3) {
+          errorLine = closestLine
+        } else {
+          // Fallback: calcular baseado na estrutura do código
+          const codeLines = originalCode.split('\n')
+          const importsCount = codeLines.filter(line => {
+            const trimmed = line.trim()
+            return trimmed.startsWith('import ') || trimmed.startsWith('from ')
+          }).length
+          
+          const baseOffset = importsCount > 0 ? importsCount + 2 : 2
+          
+          if (lineNum > baseOffset) {
+            const codeLineIndex = lineNum - baseOffset
+            let codeLineCounter = 0
+            let originalLineCounter = 1
+            
+            for (let i = 0; i < codeLines.length; i++) {
+              const line = codeLines[i]
+              const trimmed = line.trim()
+              
+              // Pular linhas vazias no início
+              if (trimmed.length === 0 && importsCount === 0 && codeLineCounter === 0) {
+                originalLineCounter++
+                continue
+              }
+              
+              // Pular imports
+              if (trimmed.startsWith('import ') || trimmed.startsWith('from ')) {
+                originalLineCounter++
+                continue
+              }
+              
+              // Esta é uma linha de código
+              if (codeLineCounter === codeLineIndex) {
+                errorLine = originalLineCounter
+                break
+              }
+              
+              codeLineCounter++
+              originalLineCounter++
+            }
+          }
+          
+          // Último fallback: usar a linha diretamente
+          if (!errorLine && lineNum > 0 && lineNum <= codeLines.length) {
+            errorLine = lineNum
+          }
+        }
+      }
+    } else {
+      // Sem mapeamento, usar linha diretamente
+      errorLine = lineNum
+    }
+  }
+  
+  // 3. Extrair mensagem de erro detalhada
+  // Para SyntaxError, formato especial
+  if (isSyntaxError) {
+    const syntaxMatch = cleanErrorStr.match(/SyntaxError:\s*(.+?)(?:\n|$)/i) ||
+                       cleanErrorStr.match(/IndentationError:\s*(.+?)(?:\n|$)/i) ||
+                       cleanErrorStr.match(/TabError:\s*(.+?)(?:\n|$)/i)
+    if (syntaxMatch) {
+      errorDetails = syntaxMatch[1].trim()
+    } else {
+      // Tentar extrair de outra forma
+      const typeIndex = cleanErrorStr.indexOf(errorType)
+      if (typeIndex !== -1) {
+        const afterType = cleanErrorStr.substring(typeIndex + errorType.length).trim()
+        if (afterType.startsWith(':')) {
+          errorDetails = afterType.substring(1).trim().split('\n')[0]
+        } else {
+          errorDetails = 'syntax error'
+        }
+      }
+    }
+  } else {
+    // Para outros erros, procurar padrão: TipoError: mensagem
+    const errorTypeMatch = cleanErrorStr.match(new RegExp(`${errorType}:\\s*(.+?)(?:\\n|$)`, 'i'))
+    if (errorTypeMatch) {
+      errorDetails = errorTypeMatch[1].trim()
+    } else {
+      // Tentar extrair da última linha do traceback
+      const lines = cleanErrorStr.split('\n').filter(line => line.trim())
+      const lastLine = lines[lines.length - 1] || ''
+      
+      if (lastLine.includes(':')) {
+        const parts = lastLine.split(':')
+        if (parts.length > 1) {
+          errorDetails = parts.slice(1).join(':').trim()
+        }
+      }
+      
+      // Se ainda não encontrou, usar mensagem original (limitada)
+      if (!errorDetails || errorDetails === errorMessage) {
+        errorDetails = errorMessage.split('\n')[0].trim().substring(0, 200)
+      }
+    }
+  }
+  
+  // 4. Formatar traceback no estilo Python
+  const codeLines = originalCode.split('\n')
+  let formattedTraceback = ''
+  
+  // Adicionar saída capturada se houver (será adicionada antes do traceback)
+  formattedTraceback += 'Traceback (most recent call last):\n'
+  
+  // Determinar linha do erro para exibição
+  let displayLine = errorLine
+  if (!displayLine && lineMatch) {
+    displayLine = parseInt(lineMatch[1], 10)
+  }
+  
+  if (displayLine && displayLine > 0 && displayLine <= codeLines.length) {
+    const errorCodeLine = codeLines[displayLine - 1]
+    formattedTraceback += `  File "${fileName}", line ${displayLine}, in <module>\n`
+    
+    if (errorCodeLine !== undefined && errorCodeLine.trim().length > 0) {
+      // Mostrar a linha do código (preservar indentação relativa)
+      const trimmedLine = errorCodeLine.trimStart()
+      formattedTraceback += `    ${trimmedLine}\n`
+    }
+  } else {
+    formattedTraceback += `  File "${fileName}", line ?, in <module>\n`
+  }
+  
+  // Adicionar tipo de erro e mensagem
+  formattedTraceback += `${errorType}: ${errorDetails}\n`
+  
+  return {
+    type: errorType,
+    line: errorLine,
+    message: errorDetails,
+    formattedTraceback,
+    isSyntaxError,
+  }
+}
 
 export default function Home() {
   const {
@@ -35,12 +315,136 @@ export default function Home() {
   const [inputPrompt, setInputPrompt] = useState('')
   const inputResolveRef = useRef<((value: string) => void) | null>(null)
   const inputRejectRef = useRef<((error: any) => void) | null>(null)
+  
+  // Referência para timeout de validação em tempo real
+  const validationTimeoutRef = useRef<NodeJS.Timeout | null>(null)
 
   const { pyodide, loading, error } = usePyodide()
   const { layout, changeLayout, isMounted } = useLayout()
 
   // Referência para o input de arquivo (oculto)
   const fileInputRef = useRef<HTMLInputElement>(null)
+  
+  /**
+   * Validação em tempo real do código Python
+   * Detecta erros de sintaxe enquanto o usuário digita
+   * Apenas valida erros de sintaxe (SyntaxError, IndentationError, TabError)
+   */
+  useEffect(() => {
+    // Limpar timeout anterior se existir
+    if (validationTimeoutRef.current) {
+      clearTimeout(validationTimeoutRef.current)
+    }
+    
+    // Não validar se:
+    // - Pyodide não está carregado
+    // - Está executando código
+    // - Código está vazio
+    if (!pyodide || loading || isExecuting || !activeTab.code.trim()) {
+      // Se código está vazio, limpar erro
+      if (!activeTab.code.trim()) {
+        setErrorLine(null)
+      }
+      return
+    }
+    
+    // Debounce: aguardar 800ms após o usuário parar de digitar
+    validationTimeoutRef.current = setTimeout(async () => {
+      try {
+        // Escapar o código para uso em string Python
+        const escapedCode = activeTab.code
+          .replace(/\\/g, '\\\\')  // Escapar backslashes
+          .replace(/"/g, '\\"')    // Escapar aspas duplas
+          .replace(/\n/g, '\\n')   // Escapar quebras de linha
+          .replace(/\r/g, '\\r')   // Escapar carriage return
+          .replace(/\t/g, '\\t')   // Escapar tabs
+        
+        // Tentar compilar o código usando compile() do Python
+        // Isso detecta apenas erros de sintaxe, sem executar o código
+        pyodide.runPython(`
+try:
+    compile("""${escapedCode}""", "${activeTab.name}", "exec")
+    __syntax_check_passed = True
+    __syntax_error_obj = None
+except SyntaxError as e:
+    __syntax_check_passed = False
+    __syntax_error_obj = e
+except IndentationError as e:
+    __syntax_check_passed = False
+    __syntax_error_obj = e
+except TabError as e:
+    __syntax_check_passed = False
+    __syntax_error_obj = e
+except Exception:
+    # Outros erros não são de sintaxe, considerar válido para validação em tempo real
+    __syntax_check_passed = True
+    __syntax_error_obj = None
+`)
+        
+        const isValid = pyodide.globals.get('__syntax_check_passed')
+        const syntaxError = pyodide.globals.get('__syntax_error_obj')
+        
+        if (!isValid && syntaxError) {
+          // Erro de sintaxe detectado
+          try {
+            // Parsear o erro
+            const parsed = parsePyodideError(
+              syntaxError,
+              activeTab.code,
+              activeTab.name
+            )
+            
+            // Se for erro de sintaxe, destacar a linha
+            if (parsed.isSyntaxError && parsed.line) {
+              setErrorLine(parsed.line)
+            } else {
+              setErrorLine(null)
+            }
+          } catch (parseErr) {
+            // Se falhar ao parsear, tentar extrair linha diretamente
+            try {
+              const errorStr = String(syntaxError)
+              const lineMatch = errorStr.match(/line\s+(\d+)/i)
+              if (lineMatch) {
+                const lineNum = parseInt(lineMatch[1], 10)
+                if (lineNum > 0 && lineNum <= activeTab.code.split('\n').length) {
+                  setErrorLine(lineNum)
+                } else {
+                  setErrorLine(null)
+                }
+              } else {
+                setErrorLine(null)
+              }
+            } catch {
+              setErrorLine(null)
+            }
+          }
+        } else {
+          // Código válido sintaticamente, limpar erro
+          setErrorLine(null)
+        }
+        
+        // Limpar variáveis temporárias
+        try {
+          pyodide.runPython('del __syntax_check_passed, __syntax_error_obj')
+        } catch {
+          // Ignorar erros ao limpar
+        }
+      } catch (err) {
+        // Se houver erro na validação, não fazer nada
+        // Isso pode acontecer se o código tiver caracteres especiais problemáticos
+        // Não definir erro para não confundir o usuário
+        console.debug('Erro na validação em tempo real:', err)
+      }
+    }, 800) // 800ms de debounce para evitar validações excessivas
+    
+    // Cleanup: limpar timeout quando componente desmontar ou dependências mudarem
+    return () => {
+      if (validationTimeoutRef.current) {
+        clearTimeout(validationTimeoutRef.current)
+      }
+    }
+  }, [activeTab.code, activeTab.name, pyodide, loading, isExecuting])
 
   // Função para exportar apenas a aba atual como arquivo .py
   const exportCurrentTab = useCallback(() => {
@@ -569,6 +973,7 @@ builtins.input = input
         const currentOutput = outputBufferRef.current.join('')
         const cancelMessage = currentOutput ? '\n\n⚠️ Execução interrompida pelo usuário' : '⚠️ Execução interrompida pelo usuário'
         updateTabOutput(activeTabId, currentOutput + cancelMessage, false)
+        setErrorLine(null)
         return
       }
       
@@ -577,185 +982,25 @@ builtins.input = input
         const currentOutput = outputBufferRef.current.join('')
         const cancelMessage = currentOutput ? '\n\n⚠️ Execução interrompida pelo usuário' : '⚠️ Execução interrompida pelo usuário'
         updateTabOutput(activeTabId, currentOutput + cancelMessage, false)
+        setErrorLine(null)
         return
       }
       
       // Capturar qualquer saída que possa ter sido gerada antes do erro
       const capturedOutput = outputBufferRef.current.join('')
       
-      const errorMessage = err instanceof Error ? err.message : String(err)
+      // Usar a função utilitária para parsear o erro
+      const parsedError = parsePyodideError(
+        err,
+        activeTab.code,
+        activeTab.name,
+        lineMappingRef.current
+      )
       
-      // Limpar a string do erro para remover duplicações e formatações indesejadas
-      // Remover "PythonError: " se presente no início
-      let cleanErrorStr = errorStr.replace(/^PythonError:\s*/i, '').trim()
+      // Definir a linha do erro no editor
+      setErrorLine(parsedError.line)
       
-      // Parsear o traceback para extrair informações do erro
-      let parsedErrorLine: number | null = null
-      let errorType = 'Erro'
-      let errorDetails = errorMessage
-      
-      // Tentar extrair a linha do erro do traceback
-      // Formato típico: File "<exec>", line X, in <module> ou File "<exec>", line X, in _run_code
-      const lineMatch = cleanErrorStr.match(/File\s+["<]exec[">],\s+line\s+(\d+)/i)
-      if (lineMatch) {
-        const lineNum = parseInt(lineMatch[1], 10)
-        
-        // Debug: verificar o mapeamento
-        console.log('Linha do erro no traceback:', lineNum)
-        console.log('Mapeamento disponível:', Array.from(lineMappingRef.current.entries()))
-        
-        // Usar o mapeamento criado durante a transformação
-        const mappedLine = lineMappingRef.current.get(lineNum)
-        if (mappedLine) {
-          parsedErrorLine = mappedLine
-          console.log('Linha mapeada encontrada:', mappedLine)
-        } else {
-          // Se não encontrou no mapeamento, tentar uma abordagem alternativa
-          // Procurar a linha mais próxima no mapeamento
-          let closestLine: number | null = null
-          let minDiff = Infinity
-          
-          for (const [transformedLine, originalLine] of lineMappingRef.current.entries()) {
-            const diff = Math.abs(transformedLine - lineNum)
-            if (diff < minDiff) {
-              minDiff = diff
-              closestLine = originalLine
-            }
-          }
-          
-          if (closestLine !== null && minDiff <= 3) {
-            parsedErrorLine = closestLine
-            console.log('✅ Usando linha mais próxima:', closestLine, '(diff:', minDiff, ')')
-          } else {
-            // Tentar calcular diretamente baseado na estrutura
-            const originalCodeLines = activeTab.code.split('\n')
-            // Calcular o número de imports diretamente (já que imports não está acessível aqui)
-            const importsCount = originalCodeLines.filter(line => {
-              const trimmed = line.trim()
-              return trimmed.startsWith('import ') || trimmed.startsWith('from ')
-            }).length
-            const baseOffset = importsCount > 0 ? importsCount + 2 : 2 // imports + linha vazia + def
-            
-            // Se a linha do erro está dentro do código transformado
-            if (lineNum > baseOffset) {
-              const codeLineIndex = lineNum - baseOffset
-              // Recalcular o mapeamento para encontrar a linha original
-              let codeLineCounter = 0
-              let originalLineCounter = 1
-              
-              for (let i = 0; i < originalCodeLines.length; i++) {
-                const line = originalCodeLines[i]
-                const trimmed = line.trim()
-                
-                // Pular linhas vazias no início
-                if (trimmed.length === 0 && importsCount === 0 && codeLineCounter === 0) {
-                  originalLineCounter++
-                  continue
-                }
-                
-                // Pular imports
-                if (trimmed.startsWith('import ') || trimmed.startsWith('from ')) {
-                  originalLineCounter++
-                  continue
-                }
-                
-                // Esta é uma linha de código
-                if (codeLineCounter === codeLineIndex) {
-                  parsedErrorLine = originalLineCounter
-                  console.log('✅ Linha calculada diretamente:', originalLineCounter, 'para codeLineIndex', codeLineIndex)
-                  break
-                }
-                
-                codeLineCounter++
-                originalLineCounter++
-              }
-              
-              // Se ainda não encontrou, usar fallback
-              if (!parsedErrorLine && lineNum > 0 && lineNum <= originalCodeLines.length) {
-                parsedErrorLine = lineNum
-                console.log('⚠️ Usando linha direta (fallback):', lineNum)
-              }
-            } else if (lineNum > 0 && lineNum <= originalCodeLines.length) {
-              parsedErrorLine = lineNum
-              console.log('⚠️ Usando linha direta (fallback 2):', lineNum)
-            }
-          }
-        }
-      }
-      
-      // Tentar extrair o tipo de erro (NameError, ValueError, etc.)
-      // Para SyntaxError, procurar primeiro pois tem formato especial
-      if (cleanErrorStr.includes('SyntaxError')) {
-        errorType = 'SyntaxError'
-        // Extrair a mensagem do SyntaxError
-        const syntaxMatch = cleanErrorStr.match(/SyntaxError:\s*(.+?)(?:\n|$)/i)
-        if (syntaxMatch) {
-          errorDetails = syntaxMatch[1].trim()
-        } else {
-          // Tentar extrair de outra forma
-          const typeIndex = cleanErrorStr.indexOf('SyntaxError')
-          const afterType = errorStr.substring(typeIndex + 'SyntaxError'.length).trim()
-          if (afterType.startsWith(':')) {
-            errorDetails = afterType.substring(1).trim().split('\n')[0]
-          } else {
-            errorDetails = 'syntax error'
-          }
-        }
-      } else {
-        const errorTypeMatch = cleanErrorStr.match(/(\w+Error|Exception):\s*(.+?)(?:\n|$)/i)
-        if (errorTypeMatch) {
-          errorType = errorTypeMatch[1]
-          errorDetails = errorTypeMatch[2].trim()
-        } else {
-          // Tentar encontrar o tipo de erro de outra forma
-          const commonErrors = ['NameError', 'TypeError', 'ValueError', 'IndentationError', 'AttributeError', 'KeyError', 'IndexError', 'ZeroDivisionError', 'FileNotFoundError']
-          for (const errType of commonErrors) {
-            if (cleanErrorStr.includes(errType)) {
-              errorType = errType
-              // Extrair a mensagem após o tipo de erro
-              const typeIndex = cleanErrorStr.indexOf(errType)
-              const afterType = cleanErrorStr.substring(typeIndex + errType.length).trim()
-              if (afterType.startsWith(':')) {
-                errorDetails = afterType.substring(1).trim().split('\n')[0]
-              } else {
-                // Tentar extrair da mensagem completa
-                const messageMatch = cleanErrorStr.match(new RegExp(`${errType}[^\\n]*:([^\\n]+)`, 'i'))
-                if (messageMatch) {
-                  errorDetails = messageMatch[1].trim()
-                }
-              }
-              break
-            }
-          }
-        }
-      }
-      
-      // Se não encontrou detalhes, usar a mensagem de erro completa (limitada)
-      if (!errorDetails || errorDetails === errorMessage) {
-        // Tentar extrair apenas a parte relevante da mensagem
-        const simpleMessage = errorMessage.split('\n')[0].trim()
-        if (simpleMessage && simpleMessage !== errorMessage) {
-          errorDetails = simpleMessage
-        } else {
-          // Tentar extrair da string completa do erro
-          const lastLine = cleanErrorStr.split('\n').filter(line => line.trim()).pop() || ''
-          if (lastLine.includes(':')) {
-            const parts = lastLine.split(':')
-            if (parts.length > 1) {
-              errorDetails = parts.slice(1).join(':').trim()
-            } else {
-              errorDetails = errorMessage.substring(0, 200) // Limitar tamanho
-            }
-          } else {
-            errorDetails = errorMessage.substring(0, 200) // Limitar tamanho
-          }
-        }
-      }
-      
-      // Definir a linha do erro
-      setErrorLine(parsedErrorLine)
-      
-      // Formatar erro no formato tradicional do Python
+      // Formatar saída de erro completa
       let errorOutput = ''
       
       // Se houver saída capturada antes do erro, incluir
@@ -763,116 +1008,14 @@ builtins.input = input
         errorOutput = capturedOutput + '\n'
       }
       
-      // Para SyntaxError, exibir de forma mais direta com traceback
-      if (errorType === 'SyntaxError') {
-        // Formatar traceback no estilo Python
-        errorOutput += 'Traceback (most recent call last):\n'
-        
-        // Determinar a linha do erro
-        let errorLineNumber: number | null = parsedErrorLine
-        if (!errorLineNumber) {
-          // Tentar extrair a linha do traceback original se disponível
-          const tracebackLineMatch = cleanErrorStr.match(/File\s+["<]exec[">],\s+line\s+(\d+)/i)
-          if (tracebackLineMatch) {
-            const lineNum = parseInt(tracebackLineMatch[1], 10)
-            // Tentar mapear usando o mapeamento
-            const mappedLine = lineMappingRef.current.get(lineNum)
-            if (mappedLine) {
-              errorLineNumber = mappedLine
-            } else {
-              errorLineNumber = lineNum
-            }
-          }
-        }
-        
-        if (errorLineNumber) {
-          // Obter a linha do código que causou o erro
-          const codeLines = activeTab.code.split('\n')
-          const errorCodeLine = codeLines[errorLineNumber - 1]
-          
-          errorOutput += `  File "${activeTab.name}", line ${errorLineNumber}, in <module>\n`
-          
-          if (errorCodeLine !== undefined && errorCodeLine.trim().length > 0) {
-            // Mostrar a linha do código
-            const trimmedLine = errorCodeLine.trimStart()
-            errorOutput += `    ${trimmedLine}\n`
-          }
-        } else {
-          errorOutput += `  File "${activeTab.name}", line ?, in <module>\n`
-        }
-        
-        // Adicionar o tipo de erro e a mensagem
-        errorOutput += `${errorType}: ${errorDetails}\n`
-      } else {
-        // Para outros erros (NameError, TypeError, etc.), usar o formato completo com traceback
-        // Formatar traceback no estilo Python
-        errorOutput += 'Traceback (most recent call last):\n'
-        
-        // Determinar a linha do erro
-        let errorLineNumber: number | null = parsedErrorLine
-        if (!errorLineNumber) {
-          // Tentar extrair a linha do traceback original se disponível
-          const tracebackLineMatch = cleanErrorStr.match(/File\s+["<]exec[">],\s+line\s+(\d+)/i)
-          if (tracebackLineMatch) {
-            const lineNum = parseInt(tracebackLineMatch[1], 10)
-            // Tentar mapear usando o mapeamento
-            const mappedLine = lineMappingRef.current.get(lineNum)
-            if (mappedLine) {
-              errorLineNumber = mappedLine
-            } else {
-              // Procurar a linha mais próxima
-              let closestLine: number | null = null
-              let minDiff = Infinity
-              
-              for (const [transformedLine, originalLine] of lineMappingRef.current.entries()) {
-                const diff = Math.abs(transformedLine - lineNum)
-                if (diff < minDiff) {
-                  minDiff = diff
-                  closestLine = originalLine
-                }
-              }
-              
-              if (closestLine !== null && minDiff <= 2) {
-                errorLineNumber = closestLine
-              } else {
-                errorLineNumber = lineNum
-              }
-            }
-          }
-        }
-        
-        if (errorLineNumber) {
-          // Obter a linha do código que causou o erro
-          const codeLines = activeTab.code.split('\n')
-          const errorCodeLine = codeLines[errorLineNumber - 1]
-          
-          errorOutput += `  File "${activeTab.name}", line ${errorLineNumber}, in <module>\n`
-          
-          if (errorCodeLine !== undefined && errorCodeLine.trim().length > 0) {
-            // Mostrar a linha do código (remover espaços iniciais extras, mas manter indentação relativa)
-            const trimmedLine = errorCodeLine.trimStart()
-            errorOutput += `    ${trimmedLine}\n`
-          }
-        } else {
-          errorOutput += `  File "${activeTab.name}", line ?, in <module>\n`
-        }
-        
-        // Adicionar o tipo de erro e a mensagem
-        errorOutput += `${errorType}: ${errorDetails}\n`
-      }
+      // Adicionar traceback formatado
+      errorOutput += parsedError.formattedTraceback
       
       // Adicionar mensagem de saída do processo
       errorOutput += '\n** Process exited - Return Code: 1 **\n'
       
-      // Se foi cancelado, não mostrar erro, apenas a mensagem de cancelamento
-      if (executionAbortedRef.current) {
-        const currentOutput = outputBufferRef.current.join('')
-        const cancelMessage = currentOutput ? '\n\n⚠️ Execução interrompida pelo usuário' : '⚠️ Execução interrompida pelo usuário'
-        updateTabOutput(activeTabId, currentOutput + cancelMessage, false)
-        setErrorLine(null)
-      } else {
-        updateTabOutput(activeTabId, errorOutput || 'Erro ao executar código', true)
-      }
+      // Atualizar saída do terminal com o erro formatado
+      updateTabOutput(activeTabId, errorOutput || 'Erro ao executar código', true)
     } finally {
       // Só limpar se não foi cancelado manualmente
       if (!executionAbortedRef.current) {
