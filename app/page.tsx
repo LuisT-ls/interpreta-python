@@ -954,16 +954,56 @@ builtins.input = input
       const importsCode = imports.length > 0 ? imports.join('\n') + '\n\n' : ''
       
       // Criar mapeamento de linhas: linha no código transformado -> linha no código original
-      // IMPORTANTE: Mapear TODAS as linhas, incluindo vazias e comentários
-      const codeLineToOriginalLine = new Map<number, number>()
+      // IMPORTANTE: Mapear TODAS as linhas, incluindo vazias, comentários E IMPORTS
+      
+      // Primeiro, criar mapeamento para imports (executados no nível superior)
+      // Estrutura do código transformado:
+      // - Se há imports: imports (N linhas, começando na linha 1) + linha vazia + def + código
+      // - Se não há imports: def + código
+      let transformedLineNum = 1
+      
+      // Mapear linhas dos imports (se houver)
+      const importLineToOriginalLine = new Map<number, number>()
       let originalLineNum = 1
+      
+      for (let i = 0; i < lines.length; i++) {
+        const originalLine = lines[i]
+        const trimmed = originalLine.trim()
+        
+        // Se é um import, mapear para a linha do código transformado
+        if (trimmed.startsWith('import ') || trimmed.startsWith('from ')) {
+          // Encontrar qual import é este (comparar com a lista de imports)
+          const importIndex = imports.findIndex(imp => {
+            // Comparar removendo espaços extras
+            const normalizedImport = imp.trim()
+            const normalizedOriginal = trimmed.split('#')[0].trim() // Remover comentários inline
+            return normalizedImport === normalizedOriginal
+          })
+          
+          if (importIndex !== -1) {
+            // Mapear: linha do código transformado (onde está o import) -> linha original
+            const importTransformedLine = importIndex + 1 // Imports começam na linha 1
+            importLineToOriginalLine.set(importTransformedLine, originalLineNum)
+            lineMappingRef.current.set(importTransformedLine, originalLineNum)
+            console.log(`✅ Mapeando import na linha transformada ${importTransformedLine} -> linha original ${originalLineNum} (import: "${trimmed.substring(0, 50)}")`)
+          }
+          originalLineNum++
+          continue
+        }
+        
+        originalLineNum++
+      }
+      
+      // Criar mapeamento para código dentro de _run_code
+      const codeLineToOriginalLine = new Map<number, number>()
+      originalLineNum = 1
       let codeLineCounter = 0
       
       for (let i = 0; i < lines.length; i++) {
         const originalLine = lines[i]
         const trimmed = originalLine.trim()
         
-        // Pular apenas imports (não pular linhas vazias ou comentários)
+        // Pular apenas imports (já mapeados acima)
         if (trimmed.startsWith('import ') || trimmed.startsWith('from ')) {
           originalLineNum++
           continue
@@ -976,15 +1016,17 @@ builtins.input = input
       }
       
       console.log('codeLineToOriginalLine criado:', Array.from(codeLineToOriginalLine.entries()))
+      console.log('importLineToOriginalLine criado:', Array.from(importLineToOriginalLine.entries()))
       
       // Calcular onde começa o código dentro de _run_code
       // Estrutura do código transformado:
       // - Se há imports: imports (N linhas) + linha vazia (1 linha) + def (1 linha) = N + 2
       // - Se não há imports: def (1 linha) = 1
-      let transformedLineNum = 1
       if (imports.length > 0) {
-        transformedLineNum += imports.length // linhas de imports
+        transformedLineNum = imports.length + 1 // linha após último import
         transformedLineNum++ // linha vazia após imports
+      } else {
+        transformedLineNum = 1
       }
       transformedLineNum++ // linha do "async def _run_code():"
       
