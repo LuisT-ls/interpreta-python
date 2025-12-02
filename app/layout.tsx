@@ -7,7 +7,7 @@ const inter = Inter({ subsets: ['latin'] })
 
 const siteUrl = 'https://icti-python.vercel.app'
 const siteName = 'Interpretador Python Web'
-const description = 'Execute código Python diretamente no navegador usando Pyodide (WebAssembly). Editor completo com syntax highlighting, múltiplas abas, validação em tempo real e suporte a input(). Sem necessidade de backend ou servidor.'
+const description = 'Execute código Python no navegador com Pyodide. Editor com syntax highlighting, múltiplas abas, validação em tempo real e suporte a input(). Sem backend.'
 
 export const metadata: Metadata = {
   metadataBase: new URL(siteUrl),
