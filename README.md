@@ -8,7 +8,7 @@
 
 Uma aplicação web moderna e completa que permite executar código Python diretamente no navegador usando Pyodide (WebAssembly), sem necessidade de backend ou servidor.
 
-🌐 **Acesse a aplicação:** [https://interpreta-python.vercel.app/](https://interpreta-python.vercel.app/)  
+🌐 **Acesse a aplicação:** [https://icti-python.vercel.app/](https://icti-python.vercel.app/)  
 📦 **Repositório:** [https://github.com/LuisT-ls/interpreta-python](https://github.com/LuisT-ls/interpreta-python)
 
 ---
@@ -19,13 +19,20 @@ Uma aplicação web moderna e completa que permite executar código Python diret
 - ✅ **Execução 100% no cliente** - Todo o processamento acontece no navegador, sem envio de dados para servidor
 - ✅ **Suporte completo ao Python 3.12** - Execute código Python moderno com todas as funcionalidades
 - ✅ **Captura de stdout e stderr** - Visualize saídas e erros em tempo real
-- ✅ **Formatação de tracebacks** - Erros Python são exibidos de forma clara e legível
-- ✅ **Botão de parar execução** - Interrompa códigos em loop infinito ou execuções longas
+- ✅ **Formatação de tracebacks** - Erros Python são exibidos de forma clara e legível com mapeamento preciso de linhas
+- ✅ **Suporte a múltiplos tipos de erro** - Detecta e formata SyntaxError, IndentationError, TypeError, ValueError, NameError e muitos outros
+- ✅ **Mapeamento de linhas de erro** - Erros são mapeados corretamente para as linhas originais do código, mesmo com código transformado
+- ✅ **Botão de parar execução** - Interrompa códigos em loop infinito ou execuções longas com KeyboardInterrupt
 - ✅ **Suporte a `input()`** - Sistema de input inline no terminal, sem popups do navegador
+- ✅ **Suporte a imports** - Imports são tratados separadamente e executados antes do código principal
 
 ### 📝 Editor de Código
+- ✅ **Syntax highlighting** - Destaque de sintaxe para palavras-chave, funções built-in, strings, números e operadores
+- ✅ **Números de linha** - Visualização clara das linhas do código
+- ✅ **Validação em tempo real** - Detecta erros de sintaxe enquanto você digita (com debounce de 800ms)
+- ✅ **Destaque visual de erros** - Linha com erro é destacada em vermelho no editor
 - ✅ **Auto-complete de caracteres** - Parênteses, colchetes, chaves e aspas são fechados automaticamente
-- ✅ **Indentação inteligente** - Tab para indentar, Shift+Tab para desindentar
+- ✅ **Indentação inteligente** - Tab para indentar, Enter mantém indentação e adiciona 4 espaços após `:` (indentação automática)
 - ✅ **Múltiplas abas** - Trabalhe com vários arquivos simultaneamente
 - ✅ **Nomes dinâmicos de abas** - Cada nova aba recebe um nome sequencial (editor.py, editor_2.py, etc.)
 - ✅ **Fechar abas** - Feche abas individuais mantendo outras abertas
@@ -47,10 +54,11 @@ Uma aplicação web moderna e completa que permite executar código Python diret
 
 ### ⚡ Performance e UX
 - ✅ **Carregamento assíncrono** - Pyodide carrega em background com feedback visual
-- ✅ **Saída em tempo real** - Os `print()` aparecem imediatamente durante a execução
+- ✅ **Saída em tempo real** - Os `print()` aparecem imediatamente durante a execução usando handlers batched
 - ✅ **Input inline** - Digite valores diretamente no terminal, sem interrupções
 - ✅ **Auto-scroll** - Terminal rola automaticamente para mostrar a saída mais recente
 - ✅ **Animações suaves** - Transições e efeitos visuais modernos
+- ✅ **Debounce inteligente** - Validação de sintaxe usa debounce de 800ms para evitar processamento excessivo
 
 ---
 
@@ -64,6 +72,7 @@ Este projeto utiliza as seguintes tecnologias:
 - **[Tailwind CSS](https://tailwindcss.com/)** - Framework CSS utility-first
 - **[Pyodide 0.26.1](https://pyodide.org/)** - Python para WebAssembly
 - **[JSZip](https://stuk.github.io/jszip/)** - Biblioteca para criar arquivos ZIP no navegador
+- **Editor customizado** - Editor de código Python com syntax highlighting e validação em tempo real implementado do zero
 
 ---
 
@@ -213,20 +222,20 @@ interpreta-python/
 ├── app/
 │   ├── img/
 │   │   └── favicon/          # Favicons e ícones
-│   ├── layout.tsx            # Layout principal da aplicação
-│   ├── page.tsx              # Página principal (orquestrador)
+│   ├── layout.tsx            # Layout principal da aplicação (metadata, fontes)
+│   ├── page.tsx              # Página principal (orquestrador, execução de código, validação)
 │   └── globals.css            # Estilos globais
 ├── components/
-│   ├── PythonEditor.tsx       # Editor de código com auto-complete
+│   ├── PythonEditor.tsx       # Editor de código com syntax highlighting, validação e auto-complete
 │   ├── OutputTerminal.tsx    # Terminal de saída com input inline
 │   ├── ThemeToggle.tsx       # Toggle de tema claro/escuro
 │   ├── LayoutSelector.tsx    # Seletor de layout
 │   ├── EditorTabs.tsx        # Sistema de abas do editor
 │   └── ExportMenu.tsx        # Menu de exportação
 ├── hooks/
-│   ├── usePyodide.ts         # Hook para gerenciar Pyodide
-│   ├── useLayout.ts          # Hook para gerenciar layout
-│   └── useEditorTabs.ts      # Hook para gerenciar abas
+│   ├── usePyodide.ts         # Hook para carregar e gerenciar Pyodide
+│   ├── useLayout.ts          # Hook para gerenciar layout (com persistência no localStorage)
+│   └── useEditorTabs.ts      # Hook para gerenciar abas do editor
 ├── public/
 │   ├── logo.png              # Logo da aplicação
 │   └── favicon/              # Arquivos de favicon
@@ -316,9 +325,10 @@ npm run lint         # Executa o ESLint
 ### Limitações
 
 - ⚠️ **Conexão com Internet** - O Pyodide é carregado via CDN (jsdelivr), então é necessária conexão com a internet
-- ⚠️ **Primeira Execução** - A primeira execução pode demorar alguns segundos enquanto o Pyodide baixa os arquivos necessários
-- ⚠️ **Bibliotecas Python** - Algumas bibliotecas Python podem não estar disponíveis no Pyodide
-- ⚠️ **Performance** - Códigos muito complexos podem ser mais lentos que em Python nativo
+- ⚠️ **Primeira Execução** - A primeira execução pode demorar alguns segundos enquanto o Pyodide baixa os arquivos necessários (~10-15MB)
+- ⚠️ **Bibliotecas Python** - Algumas bibliotecas Python podem não estar disponíveis no Pyodide (especialmente aquelas que dependem de código C)
+- ⚠️ **Performance** - Códigos muito complexos podem ser mais lentos que em Python nativo devido à execução via WebAssembly
+- ⚠️ **Validação em Tempo Real** - A validação de sintaxe usa debounce de 800ms, então pode haver um pequeno delay na detecção de erros
 
 ### Segurança
 

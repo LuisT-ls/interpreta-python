@@ -1254,8 +1254,10 @@ builtins.input = input
               {/* eslint-disable-next-line @next/next/no-img-element */}
               <img
                 src="/logo.png"
-                alt="Logo Python"
+                alt="Interpretador Python Web - Execute código Python no navegador"
                 className="h-8 w-auto object-contain"
+                width={32}
+                height={32}
               />
               <h1 className="text-xl font-bold text-gray-900 dark:text-gray-100">
                 Interpretador Python Web
