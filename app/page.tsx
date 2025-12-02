@@ -928,26 +928,140 @@ builtins.input = input
         if (searchPos < 0) break
       }
       
-      // Substituir input() em atribuições simples: variavel = input(...)
-      transformedCode = transformedCode.replace(
-        /(\s+)(\w+)\s*=\s*input\(/g,
-        '$1$2 = await input('
-      )
+      // Substituir input() de forma robusta
+      // Processa de trás para frente para não afetar os índices
+      let inputCounter = 0
+      const inputReplacements: Array<{ original: string; replacement: string; position: number }> = []
       
-      // Substituir input() dentro de int(), float(), etc: variavel = int(input(...))
-      transformedCode = transformedCode.replace(
-        /(\s+)(\w+)\s*=\s*(int|float|str)\(input\(/g,
-        '$1$2 = $3(await input('
-      )
-      
-      // Substituir input() em outros contextos: if input(...), return input(...), etc
-      transformedCode = transformedCode.replace(
-        /(\s+)(if|return|print|assert)\s*\(.*?input\(/g,
-        (match) => {
-          // Substituir apenas o input() dentro da expressão
-          return match.replace(/input\(/g, 'await input(')
+      searchPos = transformedCode.length
+      while (true) {
+        const lastInputPos = transformedCode.lastIndexOf('input(', searchPos)
+        if (lastInputPos === -1) break
+        
+        const closingPos = findInputClosing(transformedCode, lastInputPos)
+        if (closingPos === -1) {
+          searchPos = lastInputPos - 1
+          if (searchPos < 0) break
+          continue
         }
-      )
+        
+        // Extrair a chamada input(...)
+        const inputCall = transformedCode.substring(lastInputPos, closingPos + 1)
+        const beforeInput = transformedCode.substring(0, lastInputPos)
+        const afterInput = transformedCode.substring(closingPos + 1)
+        
+        // Verificar se está dentro de uma chamada de função como int(), float(), str()
+        // Padrão: função(input(...))
+        const funcMatch = beforeInput.match(/(\w+)\s*\(\s*$/)
+        const closingParenMatch = afterInput.match(/^\s*\)/)
+        
+        if (funcMatch && closingParenMatch) {
+          // Está dentro de uma função, precisa extrair para variável temporária
+          const funcName = funcMatch[1]
+          
+          // Encontrar início da chamada da função externa
+          const funcCallStart = beforeInput.lastIndexOf(funcName + '(', lastInputPos)
+          if (funcCallStart !== -1) {
+            // Encontrar o fechamento completo da função externa
+            let funcDepth = 1
+            let funcPos = funcCallStart + funcName.length + 1
+            let funcInString = false
+            let funcStringChar = ''
+            
+            while (funcPos < transformedCode.length && funcDepth > 0) {
+              const char = transformedCode[funcPos]
+              const prevChar = funcPos > 0 ? transformedCode[funcPos - 1] : ''
+              
+              if ((char === '"' || char === "'") && prevChar !== '\\') {
+                if (!funcInString) {
+                  funcInString = true
+                  funcStringChar = char
+                } else if (char === funcStringChar) {
+                  funcInString = false
+                  funcStringChar = ''
+                }
+              }
+              
+              if (!funcInString) {
+                if (char === '(') funcDepth++
+                if (char === ')') funcDepth--
+              }
+              
+              funcPos++
+            }
+            
+            if (funcDepth === 0) {
+              const funcCallEnd = funcPos - 1
+              
+              // Encontrar início da linha para obter indentação
+              let lineStart = beforeInput.lastIndexOf('\n', funcCallStart)
+              if (lineStart === -1) lineStart = 0
+              else lineStart += 1
+              
+              const lineBeforeFunc = beforeInput.substring(lineStart, funcCallStart)
+              const indentMatch = lineBeforeFunc.match(/^(\s*)/)
+              const indent = indentMatch ? indentMatch[1] : ''
+              
+              // Verificar se há atribuição antes (ex: variavel = int(input(...)))
+              const assignmentMatch = lineBeforeFunc.match(/^(\s*)(\w+)\s*=\s*$/)
+              
+              if (assignmentMatch) {
+                // Há atribuição, substituir a linha inteira
+                const fullLine = transformedCode.substring(lineStart, funcCallEnd + 1)
+                const varName = assignmentMatch[2]
+                
+                inputCounter++
+                const tempVar = `__input_temp_${inputCounter}`
+                
+                // Extrair a parte após o = (a função com input)
+                const afterEquals = fullLine.substring(fullLine.indexOf('=') + 1).trim()
+                const replacement = `${indent}${tempVar} = await ${inputCall}\n${indent}${varName} = ${afterEquals.replace(inputCall, tempVar)}`
+                
+                inputReplacements.push({
+                  original: fullLine,
+                  replacement,
+                  position: lineStart
+                })
+              } else {
+                // Apenas função, substituir função(input(...))
+                const fullFuncCall = transformedCode.substring(funcCallStart, funcCallEnd + 1)
+                
+                inputCounter++
+                const tempVar = `__input_temp_${inputCounter}`
+                
+                const replacement = `${indent}${tempVar} = await ${inputCall}\n${indent}${fullFuncCall.replace(inputCall, tempVar)}`
+                
+                inputReplacements.push({
+                  original: fullFuncCall,
+                  replacement,
+                  position: funcCallStart
+                })
+              }
+              
+              searchPos = lineStart - 1
+              continue
+            }
+          }
+        }
+        
+        // Caso simples: apenas adicionar await
+        inputReplacements.push({
+          original: inputCall,
+          replacement: `await ${inputCall}`,
+          position: lastInputPos
+        })
+        
+        searchPos = lastInputPos - 1
+        if (searchPos < 0) break
+      }
+      
+      // Aplicar substituições de trás para frente
+      inputReplacements.sort((a, b) => b.position - a.position)
+      for (const replacement of inputReplacements) {
+        const before = transformedCode.substring(0, replacement.position)
+        const after = transformedCode.substring(replacement.position + replacement.original.length)
+        transformedCode = before + replacement.replacement + after
+      }
       
       // Construir o código final com imports no nível superior
       // Garantir que os imports sejam executados primeiro
