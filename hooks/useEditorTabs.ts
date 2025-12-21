@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useCallback } from 'react'
+import { useState, useCallback, useEffect } from 'react'
 
 export interface EditorTab {
   id: string
@@ -26,16 +26,70 @@ for i in range(3):
     print(f"Contagem: {i}")`
 
 export function useEditorTabs() {
-  const [tabs, setTabs] = useState<EditorTab[]>([
-    {
-      id: '1',
-      name: 'editor.py',
-      code: DEFAULT_CODE,
-      output: '',
-      hasError: false,
-    },
-  ])
-  const [activeTabId, setActiveTabId] = useState<string>('1')
+  // Inicialização preguiçosa para carregar do LocalStorage (apenas no cliente)
+  const [tabs, setTabs] = useState<EditorTab[]>(() => {
+    if (typeof window !== 'undefined') {
+      try {
+        const savedTabs = localStorage.getItem('python-web-ide-tabs')
+        if (savedTabs) {
+          return JSON.parse(savedTabs)
+        }
+      } catch (e) {
+        console.error('Erro ao carregar abas do localStorage:', e)
+      }
+    }
+    return [
+      {
+        id: '1',
+        name: 'editor.py',
+        code: DEFAULT_CODE,
+        output: '',
+        hasError: false,
+      },
+    ]
+  })
+
+  // Carregar aba ativa do LocalStorage
+  const [activeTabId, setActiveTabId] = useState<string>(() => {
+    if (typeof window !== 'undefined') {
+      try {
+        const savedActiveId = localStorage.getItem('python-web-ide-active-tab')
+        if (savedActiveId) {
+          return savedActiveId
+        }
+      } catch (e) {
+        console.error('Erro ao carregar aba ativa do localStorage:', e)
+      }
+    }
+    return '1'
+  })
+
+  // Persistir dados sempre que mudarem
+  const [isMounted, setIsMounted] = useState(false)
+
+  useEffect(() => {
+    setIsMounted(true)
+  }, [])
+
+  useEffect(() => {
+    if (isMounted) {
+      try {
+        localStorage.setItem('python-web-ide-tabs', JSON.stringify(tabs))
+      } catch (e) {
+        console.error('Erro ao salvar abas no localStorage:', e)
+      }
+    }
+  }, [tabs, isMounted])
+
+  useEffect(() => {
+    if (isMounted) {
+      try {
+        localStorage.setItem('python-web-ide-active-tab', activeTabId)
+      } catch (e) {
+        console.error('Erro ao salvar aba ativa no localStorage:', e)
+      }
+    }
+  }, [activeTabId, isMounted])
 
   const createNewTab = useCallback(() => {
     const newId = Date.now().toString()
