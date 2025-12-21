@@ -13,7 +13,7 @@ interface PythonEditorProps {
 // Função para fazer syntax highlighting do código Python
 function highlightPythonCode(code: string): string {
   if (!code) return ''
-  
+
   // Palavras-chave do Python
   const keywords = new Set([
     'and', 'as', 'assert', 'break', 'class', 'continue', 'def', 'del', 'elif', 'else',
@@ -21,7 +21,7 @@ function highlightPythonCode(code: string): string {
     'lambda', 'None', 'nonlocal', 'not', 'or', 'pass', 'raise', 'return', 'True', 'try',
     'while', 'with', 'yield', 'async', 'await'
   ])
-  
+
   // Funções built-in comuns
   const builtins = new Set([
     'abs', 'all', 'any', 'ascii', 'bin', 'bool', 'bytearray', 'bytes', 'callable', 'chr',
@@ -32,35 +32,35 @@ function highlightPythonCode(code: string): string {
     'ord', 'pow', 'print', 'property', 'range', 'repr', 'reversed', 'round', 'set', 'setattr',
     'slice', 'sorted', 'staticmethod', 'str', 'sum', 'super', 'tuple', 'type', 'vars', 'zip'
   ])
-  
+
   const lines = code.split('\n')
   const highlightedLines: string[] = []
-  
+
   for (const line of lines) {
     let result = ''
     let i = 0
     let inString = false
     let stringChar = ''
     let inComment = false
-    
+
     while (i < line.length) {
       const char = line[i]
       const prevChar = i > 0 ? line[i - 1] : ''
-      
+
       // Detectar início de comentário (fora de strings)
       if (char === '#' && !inString) {
         inComment = true
         result += `<span class="text-gray-500 dark:text-gray-400 italic">${line.substring(i)}</span>`
         break
       }
-      
+
       // Se estamos em um comentário, apenas adicionar
       if (inComment) {
         result += char
         i++
         continue
       }
-      
+
       // Detectar strings
       if ((char === '"' || char === "'") && prevChar !== '\\') {
         if (!inString) {
@@ -77,14 +77,14 @@ function highlightPythonCode(code: string): string {
         i++
         continue
       }
-      
+
       // Se estamos dentro de uma string, apenas adicionar
       if (inString) {
         result += char
         i++
         continue
       }
-      
+
       // Destacar parênteses, colchetes e chaves
       if (char === '(' || char === ')') {
         result += `<span class="text-purple-600 dark:text-purple-400 font-semibold">${char}</span>`
@@ -101,7 +101,7 @@ function highlightPythonCode(code: string): string {
         i++
         continue
       }
-      
+
       // Detectar números
       if (/\d/.test(char)) {
         let num = char
@@ -114,7 +114,7 @@ function highlightPythonCode(code: string): string {
         i = j
         continue
       }
-      
+
       // Detectar palavras (keywords, builtins, variáveis)
       if (/[a-zA-Z_]/.test(char)) {
         let word = char
@@ -123,7 +123,7 @@ function highlightPythonCode(code: string): string {
           word += line[j]
           j++
         }
-        
+
         if (keywords.has(word)) {
           result += `<span class="text-blue-800 dark:text-blue-300 font-semibold">${word}</span>`
         } else if (builtins.has(word)) {
@@ -134,7 +134,7 @@ function highlightPythonCode(code: string): string {
         i = j
         continue
       }
-      
+
       // Detectar operadores
       if (['=', '+', '-', '*', '/', '%', '<', '>', '!'].includes(char)) {
         let op = char
@@ -151,27 +151,27 @@ function highlightPythonCode(code: string): string {
         i = j
         continue
       }
-      
+
       // Caractere normal
       result += char
       i++
     }
-    
+
     // Fechar string se ainda estiver aberta
     if (inString) {
       result += '</span>'
     }
-    
+
     highlightedLines.push(result)
   }
-  
+
   return highlightedLines.join('\n')
 }
 
 export function PythonEditor({ code, onChange, disabled, fileName = 'editor.py', errorLine }: PythonEditorProps) {
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const highlightRef = useRef<HTMLDivElement>(null)
-  
+
   // Gerar código com syntax highlighting
   const highlightedCode = useMemo(() => {
     return highlightPythonCode(code)
@@ -185,13 +185,13 @@ export function PythonEditor({ code, onChange, disabled, fileName = 'editor.py',
     // Auto-resize do textarea
     textarea.style.height = 'auto'
     textarea.style.height = `${textarea.scrollHeight}px`
-    
+
     // Sincronizar scroll entre textarea e highlight overlay
     const syncScroll = () => {
       highlight.scrollTop = textarea.scrollTop
       highlight.scrollLeft = textarea.scrollLeft
     }
-    
+
     textarea.addEventListener('scroll', syncScroll)
     return () => textarea.removeEventListener('scroll', syncScroll)
   }, [code])
@@ -213,23 +213,23 @@ export function PythonEditor({ code, onChange, disabled, fileName = 'editor.py',
     // Tratamento para Enter - indentação automática
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault()
-      
+
       // Obter o código até a posição do cursor
       const codeBeforeCursor = code.substring(0, start)
       const codeAfterCursor = code.substring(end)
-      
+
       // Encontrar a linha atual
       const lines = codeBeforeCursor.split('\n')
       const currentLine = lines[lines.length - 1]
-      
+
       // Calcular a indentação da linha atual (espaços no início)
       const indentMatch = currentLine.match(/^(\s*)/)
       const currentIndent = indentMatch ? indentMatch[1] : ''
-      
+
       // Remover espaços em branco do final da linha para verificar se termina com ':'
       const trimmedLine = currentLine.trim()
       const endsWithColon = trimmedLine.endsWith(':')
-      
+
       // Calcular a indentação da nova linha
       let newIndent = currentIndent
       if (endsWithColon) {
@@ -237,11 +237,11 @@ export function PythonEditor({ code, onChange, disabled, fileName = 'editor.py',
         newIndent = currentIndent + '    '
       }
       // Se não termina com ':', manter a mesma indentação da linha atual
-      
+
       // Inserir nova linha com indentação
       const newCode = codeBeforeCursor + '\n' + newIndent + codeAfterCursor
       onChange(newCode)
-      
+
       // Posicionar o cursor na nova linha com a indentação
       setTimeout(() => {
         const newCursorPos = start + 1 + newIndent.length
@@ -255,7 +255,7 @@ export function PythonEditor({ code, onChange, disabled, fileName = 'editor.py',
       e.preventDefault()
       const newCode = code.substring(0, start) + '    ' + code.substring(end)
       onChange(newCode)
-      
+
       // Restaurar posição do cursor
       setTimeout(() => {
         textarea.selectionStart = textarea.selectionEnd = start + 4
@@ -263,14 +263,32 @@ export function PythonEditor({ code, onChange, disabled, fileName = 'editor.py',
       return
     }
 
-    // Tratamento para Backspace - remove o par se ambos estiverem juntos
+    // Tratamento para Backspace
     if (e.key === 'Backspace' && start === end && start > 0) {
+      // 1. Smart Backspace (Unindent)
+      const codeBeforeCursor = code.substring(0, start)
+      const lines = codeBeforeCursor.split('\n')
+      const currentLine = lines[lines.length - 1]
+
+      // Verifica se a linha até o cursor contém apenas espaços e é múltiplo de 4
+      if (/^\s+$/.test(currentLine) && currentLine.length >= 4 && currentLine.length % 4 === 0) {
+        e.preventDefault()
+        const newCode = code.substring(0, start - 4) + code.substring(end)
+        onChange(newCode)
+        setTimeout(() => {
+          textarea.selectionStart = textarea.selectionEnd = start - 4
+        }, 0)
+        return
+      }
+
+      // 2. Remove o par se ambos estiverem juntos
+
       const charBefore = code[start - 1]
       const charAfter = code[start]
-      
+
       // Verifica se há um par de caracteres idênticos (aspas)
-      if ((charBefore === '"' && charAfter === '"') || 
-          (charBefore === "'" && charAfter === "'")) {
+      if ((charBefore === '"' && charAfter === '"') ||
+        (charBefore === "'" && charAfter === "'")) {
         e.preventDefault()
         const newCode = code.substring(0, start - 1) + code.substring(start + 1)
         onChange(newCode)
@@ -317,7 +335,7 @@ export function PythonEditor({ code, onChange, disabled, fileName = 'editor.py',
           if (char === closingChar) closeCount++
         }
         const isInsideNested = openCount > closeCount
-        
+
         // Se o próximo caractere é o fechamento correspondente E não estamos aninhados,
         // apenas pular sobre ele (comportamento padrão)
         // Se estamos aninhados, sempre adicionar o fechamento
@@ -328,7 +346,7 @@ export function PythonEditor({ code, onChange, disabled, fileName = 'editor.py',
           }, 0)
           return
         }
-        
+
         // Caso contrário, sempre adicionar o fechamento (permite aninhamento)
         e.preventDefault()
         const newCode =
@@ -351,10 +369,10 @@ export function PythonEditor({ code, onChange, disabled, fileName = 'editor.py',
     if (e.key === 'Delete' && start === end && start < code.length) {
       const charAt = code[start]
       const charAfter = code[start + 1]
-      
+
       // Verifica se há um par de caracteres idênticos (aspas)
-      if ((charAt === '"' && charAfter === '"') || 
-          (charAt === "'" && charAfter === "'")) {
+      if ((charAt === '"' && charAfter === '"') ||
+        (charAt === "'" && charAfter === "'")) {
         e.preventDefault()
         const newCode = code.substring(0, start) + code.substring(start + 2)
         onChange(newCode)
@@ -391,9 +409,8 @@ export function PythonEditor({ code, onChange, disabled, fileName = 'editor.py',
           {lineNumbers.map((num) => (
             <div
               key={num}
-              className={`h-5 leading-5 ${
-                errorLine === num ? 'text-red-600 dark:text-red-400 font-semibold' : ''
-              }`}
+              className={`h-5 leading-5 ${errorLine === num ? 'text-red-600 dark:text-red-400 font-semibold' : ''
+                }`}
             >
               {num}
             </div>
