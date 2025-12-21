@@ -91,8 +91,6 @@ function highlightPythonCode(code: string): string {
         continue
       }
 
-      // Estado: CÓDIGO (Normal ou dentro de f-string interpolation)
-
       // Comentário (apenas se não estiver em string, o que já é garantido pelo 'else' do estado)
       if (char === '#') {
         result += `<span class="text-gray-500 dark:text-gray-400 italic">${line.substring(i)}</span>`
@@ -101,13 +99,6 @@ function highlightPythonCode(code: string): string {
 
       // Início de String
       if (char === '"' || char === "'") {
-        // Verificar se é f-string
-        // Precisamos olhar para trás. Se estivemos em loop, result já tem o HTML. 
-        // Mas podemos olhar para line[i-1].
-        // Cuidado: se 'f' já foi processado, ele está em 'result' dentro de um span.
-        // Se tivermos f"...", o 'f' foi processado como palavra na iteração anterior.
-        // Vamos assumir que sim.
-
         let isFString = false
         if (i > 0) {
           const prevChar = line[i - 1]
@@ -157,10 +148,6 @@ function highlightPythonCode(code: string): string {
 
         // Verifica se é um 'f' prefixo de string (lookahead)
         if ((word === 'f' || word === 'F') && (line[j] === '"' || line[j] === "'")) {
-          // É um prefixo de f-string!
-          // Renderiza com cor especial ou como keyword/built-in?
-          // Vamos renderizar como azul escuro (keyword-ish) ou mesmo cor da string?
-          // Python comumente destaca o 'f'.
           result += `<span class="text-blue-800 dark:text-blue-300 font-bold">${word}</span>`
         } else if (keywords.has(word)) {
           result += `<span class="text-blue-800 dark:text-blue-300 font-semibold">${word}</span>`
@@ -190,7 +177,6 @@ function highlightPythonCode(code: string): string {
           continue
         }
         // Chaves são especiais pois podem ser dicionário OU interpolação.
-        // Se estamos aqui (estado code), são dicionários ou sets.
         if (['{', '}'].includes(char)) {
           result += `<span class="text-pink-600 dark:text-pink-400 font-semibold">${char}</span>`
           i++
@@ -215,9 +201,6 @@ function highlightPythonCode(code: string): string {
       i++
     }
 
-    // Fechar spans pendentes ao fim da linha (se string multiline não suportada corretamente neste editor simples)
-    // O editor simples assume string por linha para highlight, geralmente.
-    // Mas se ficou com string aberta na stack?
     if (stack[stack.length - 1].type === 'string') {
       result += '</span>'
     }
@@ -228,9 +211,20 @@ function highlightPythonCode(code: string): string {
   return highlightedLines.join('\n')
 }
 
-export function PythonEditor({ code, onChange, disabled, fileName = 'editor.py', errorLine, onRun }: PythonEditorProps & { onRun?: () => void }) {
+export function PythonEditor({
+  code,
+  onChange,
+  disabled,
+  fileName = 'editor.py',
+  errorLine,
+  onRun,
+  fontSize = 14
+}: PythonEditorProps & { onRun?: () => void; fontSize?: number }) {
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const highlightRef = useRef<HTMLDivElement>(null)
+
+  // Calcular line-height baseado no tamanho da fonte (1.5x)
+  const lineHeight = Math.round(fontSize * 1.5)
 
   // Gerar código com syntax highlighting
   const highlightedCode = useMemo(() => {
@@ -254,7 +248,7 @@ export function PythonEditor({ code, onChange, disabled, fileName = 'editor.py',
 
     textarea.addEventListener('scroll', syncScroll)
     return () => textarea.removeEventListener('scroll', syncScroll)
-  }, [code])
+  }, [code, fontSize]) // Re-run quando fontSize mudar para garantir alinhamento
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     const textarea = e.currentTarget
@@ -303,7 +297,6 @@ export function PythonEditor({ code, onChange, disabled, fileName = 'editor.py',
         // Se a linha termina com ':', adicionar 4 espaços de indentação
         newIndent = currentIndent + '    '
       }
-      // Se não termina com ':', manter a mesma indentação da linha atual
 
       // Inserir nova linha com indentação
       const newCode = codeBeforeCursor + '\n' + newIndent + codeAfterCursor
@@ -325,39 +318,27 @@ export function PythonEditor({ code, onChange, disabled, fileName = 'editor.py',
         // Shift + Tab: Desindentar
         const startLineStart = code.lastIndexOf('\n', start - 1) + 1
         const endLineEnd = code.indexOf('\n', end)
-        const effectiveEnd = endLineEnd === -1 ? code.length : endLineEnd
-
-        // Se houver seleção de múltiplas linhas ou cursor em uma linha
-        // Vamos simplificar: desindentar a linha atual ou as linhas da seleção
 
         const lines = code.split('\n')
         let currentLineIndex = code.substring(0, start).split('\n').length - 1
         const lastLineIndex = code.substring(0, end).split('\n').length - 1
 
         let newCode = code
-        let charsRemovedCount = 0
 
-        // Iterar sobre as linhas afetadas (da atual até a última da seleção)
-        // Nota:: implementação simplificada para unindentar linha por linha
-        // Precisamos reconstruir o código
-
+        // Iterar sobre as linhas afetadas
         const newLines = [...lines]
         for (let i = currentLineIndex; i <= lastLineIndex; i++) {
           const line = newLines[i]
           if (line.startsWith('    ')) {
             newLines[i] = line.substring(4)
-            charsRemovedCount += 4 // Aproximado, ajuste fino do cursor seria complexo
           } else if (line.startsWith('\t')) {
             newLines[i] = line.substring(1)
-            charsRemovedCount += 1
           } else {
-            // Tentar remover espaços parciais (menos de 4)
             const match = line.match(/^(\s+)/)
             if (match) {
               const spaces = match[1].length
               const toRemove = Math.min(spaces, 4)
               newLines[i] = line.substring(toRemove)
-              charsRemovedCount += toRemove
             }
           }
         }
@@ -366,37 +347,30 @@ export function PythonEditor({ code, onChange, disabled, fileName = 'editor.py',
 
         if (newCode !== code) {
           onChange(newCode)
-          // Ajuste simples do cursor: manter posição relativa ou recuar
-          // Se desindentou, recuar cursor
           setTimeout(() => {
-            textarea.selectionStart = Math.max(0, start - 4) // Aproximação
-            textarea.selectionEnd = Math.max(0, end - (lines.length !== newLines.length ? 0 : 4)) // Aproximação
+            textarea.selectionStart = Math.max(0, start - 4)
+            textarea.selectionEnd = Math.max(0, end - (lines.length !== newLines.length ? 0 : 4))
           }, 0)
         }
         return
       }
 
       // Tab normal: Indentar
-      // Se houver seleção multilinhas, indentar todas?
-      // Por enquanto, comportamento simples: inserir 4 espaços na posição do cursor
       const newCode = code.substring(0, start) + '    ' + code.substring(end)
       onChange(newCode)
 
-      // Restaurar posição do cursor
       setTimeout(() => {
         textarea.selectionStart = textarea.selectionEnd = start + 4
       }, 0)
       return
     }
 
-    // Tratamento para Backspace
+    // Tratamento para Backspace (Smart Backspace)
     if (e.key === 'Backspace' && start === end && start > 0) {
-      // 1. Smart Backspace (Unindent)
       const codeBeforeCursor = code.substring(0, start)
       const lines = codeBeforeCursor.split('\n')
       const currentLine = lines[lines.length - 1]
 
-      // Verifica se a linha até o cursor contém apenas espaços e é múltiplo de 4
       if (/^\s+$/.test(currentLine) && currentLine.length >= 4 && currentLine.length % 4 === 0) {
         e.preventDefault()
         const newCode = code.substring(0, start - 4) + code.substring(end)
@@ -407,12 +381,9 @@ export function PythonEditor({ code, onChange, disabled, fileName = 'editor.py',
         return
       }
 
-      // 2. Remove o par se ambos estiverem juntos
-
       const charBefore = code[start - 1]
       const charAfter = code[start]
-
-      // Verifica se há um par de caracteres idênticos (aspas)
+      // Remove par
       if ((charBefore === '"' && charAfter === '"') ||
         (charBefore === "'" && charAfter === "'")) {
         e.preventDefault()
@@ -424,7 +395,6 @@ export function PythonEditor({ code, onChange, disabled, fileName = 'editor.py',
         return
       }
 
-      // Verifica se há um par de caracteres diferentes (parênteses, colchetes, chaves)
       for (const [open, close] of Object.entries(pairs)) {
         if (charBefore === open && charAfter === close) {
           e.preventDefault()
@@ -438,21 +408,14 @@ export function PythonEditor({ code, onChange, disabled, fileName = 'editor.py',
       }
     }
 
-    // Tratamento para caracteres de abertura - insere o fechamento automaticamente
+    // Tratamento para caracteres de abertura e fechamento automático
     if (pairs[e.key] && start === end) {
       const beforeChar = code[start - 1] || ''
       const afterChar = code[start] || ''
       const closingChar = pairs[e.key]
 
-      // Só insere o fechamento se:
-      // 1. O caractere anterior não é um escape (\)
-      // 2. O próximo caractere não é o fechamento correspondente
-      //    Para permitir parênteses aninhados, sempre adicionamos o fechamento
-      //    a menos que o próximo caractere seja exatamente o fechamento correspondente
-      //    E não estejamos dentro de outro par de parênteses/colchetes/chaves
       if (beforeChar !== '\\') {
-        // Verificar se estamos dentro de parênteses/colchetes/chaves
-        // Contar quantos pares abertos existem antes da posição atual
+        // Lógica simplificada de aninhamento
         let openCount = 0
         let closeCount = 0
         for (let i = 0; i < start; i++) {
@@ -462,9 +425,6 @@ export function PythonEditor({ code, onChange, disabled, fileName = 'editor.py',
         }
         const isInsideNested = openCount > closeCount
 
-        // Se o próximo caractere é o fechamento correspondente E não estamos aninhados,
-        // apenas pular sobre ele (comportamento padrão)
-        // Se estamos aninhados, sempre adicionar o fechamento
         if (afterChar === closingChar && !isInsideNested) {
           e.preventDefault()
           setTimeout(() => {
@@ -473,17 +433,9 @@ export function PythonEditor({ code, onChange, disabled, fileName = 'editor.py',
           return
         }
 
-        // Caso contrário, sempre adicionar o fechamento (permite aninhamento)
         e.preventDefault()
-        const newCode =
-          code.substring(0, start) +
-          e.key +
-          closingChar +
-          code.substring(end)
-
+        const newCode = code.substring(0, start) + e.key + closingChar + code.substring(end)
         onChange(newCode)
-
-        // Posiciona o cursor entre os caracteres
         setTimeout(() => {
           textarea.selectionStart = textarea.selectionEnd = start + 1
         }, 0)
@@ -491,32 +443,23 @@ export function PythonEditor({ code, onChange, disabled, fileName = 'editor.py',
       }
     }
 
-    // Tratamento para Delete - remove o par se ambos estiverem juntos
+    // Delete par
     if (e.key === 'Delete' && start === end && start < code.length) {
       const charAt = code[start]
       const charAfter = code[start + 1]
-
-      // Verifica se há um par de caracteres idênticos (aspas)
-      if ((charAt === '"' && charAfter === '"') ||
-        (charAt === "'" && charAfter === "'")) {
+      if ((charAt === '"' && charAfter === '"') || (charAt === "'" && charAfter === "'")) {
         e.preventDefault()
         const newCode = code.substring(0, start) + code.substring(start + 2)
         onChange(newCode)
-        setTimeout(() => {
-          textarea.selectionStart = textarea.selectionEnd = start
-        }, 0)
+        setTimeout(() => { textarea.selectionStart = textarea.selectionEnd = start }, 0)
         return
       }
-
-      // Verifica se há um par de caracteres diferentes
       for (const [open, close] of Object.entries(pairs)) {
         if (charAt === open && charAfter === close) {
           e.preventDefault()
           const newCode = code.substring(0, start) + code.substring(start + 2)
           onChange(newCode)
-          setTimeout(() => {
-            textarea.selectionStart = textarea.selectionEnd = start
-          }, 0)
+          setTimeout(() => { textarea.selectionStart = textarea.selectionEnd = start }, 0)
           return
         }
       }
@@ -529,14 +472,16 @@ export function PythonEditor({ code, onChange, disabled, fileName = 'editor.py',
 
   return (
     <div className="relative h-full flex flex-col">
-      <div className="flex-1 flex overflow-auto relative">
+      <div className="flex-1 flex overflow-auto relative bg-gray-50 dark:bg-gray-900">
         {/* Números das linhas */}
-        <div className="flex-shrink-0 px-2 py-4 bg-gray-100 dark:bg-gray-800 text-gray-500 dark:text-gray-400 text-right text-xs font-mono select-none">
+        <div
+          className="flex-shrink-0 px-3 py-4 bg-gray-100 dark:bg-gray-800 border-r border-gray-200 dark:border-gray-700 text-gray-400 dark:text-gray-500 text-right font-mono select-none"
+          style={{ fontSize: `${fontSize}px`, lineHeight: `${lineHeight}px` }}
+        >
           {lineNumbers.map((num) => (
             <div
               key={num}
-              className={`h-5 leading-5 ${errorLine === num ? 'text-red-600 dark:text-red-400 font-semibold' : ''
-                }`}
+              className={`${errorLine === num ? 'text-red-600 dark:text-red-400 font-bold bg-red-100 dark:bg-red-900/30' : ''}`}
             >
               {num}
             </div>
@@ -547,15 +492,16 @@ export function PythonEditor({ code, onChange, disabled, fileName = 'editor.py',
           {/* Overlay de syntax highlighting */}
           <div
             ref={highlightRef}
-            className="absolute inset-0 p-4 font-mono text-sm pointer-events-none overflow-auto whitespace-pre-wrap break-words bg-white dark:bg-gray-900"
+            className="absolute inset-0 p-4 font-mono pointer-events-none overflow-auto whitespace-pre-wrap break-words text-gray-800 dark:text-gray-200"
             style={{
-              lineHeight: '20px',
+              fontSize: `${fontSize}px`,
+              lineHeight: `${lineHeight}px`,
             }}
           >
             {code ? (
               <div dangerouslySetInnerHTML={{ __html: highlightedCode }} />
             ) : (
-              <div className="text-gray-400 dark:text-gray-500">
+              <div className="text-gray-400 dark:text-gray-500 opacity-50">
                 Digite seu código Python aqui...
               </div>
             )}
@@ -567,20 +513,21 @@ export function PythonEditor({ code, onChange, disabled, fileName = 'editor.py',
             onChange={(e) => onChange(e.target.value)}
             onKeyDown={handleKeyDown}
             disabled={disabled}
-            className="relative w-full h-full p-4 bg-transparent text-transparent font-mono text-sm resize-none focus:outline-none disabled:opacity-50 disabled:cursor-not-allowed caret-gray-900 dark:caret-gray-100"
+            className="relative w-full h-full p-4 bg-transparent text-transparent font-mono resize-none focus:outline-none disabled:opacity-50 disabled:cursor-not-allowed caret-black dark:caret-white"
             placeholder="Digite seu código Python aqui..."
             spellCheck={false}
             style={{
-              lineHeight: '20px',
+              fontSize: `${fontSize}px`,
+              lineHeight: `${lineHeight}px`,
             }}
           />
           {/* Indicador visual da linha de erro */}
           {errorLine && (
             <div
-              className="absolute left-0 right-0 bg-red-100 dark:bg-red-900/30 border-l-4 border-red-500 pointer-events-none z-10"
+              className="absolute left-0 right-0 border-l-2 border-red-500 pointer-events-none z-10 bg-red-500/10"
               style={{
-                top: `${(errorLine - 1) * 20 + 16}px`, // 16px é o padding-top
-                height: '20px',
+                top: `${(errorLine - 1) * lineHeight + 16}px`, // 16px é o padding-top
+                height: `${lineHeight}px`,
               }}
             />
           )}

@@ -1373,6 +1373,24 @@ builtins.input = input
     }
   }
 
+  const [fontSize, setFontSize] = useState(14)
+
+  useEffect(() => {
+    // Carregar tamanho da fonte salvo
+    const savedFontSize = localStorage.getItem('python-web-ide-font-size')
+    if (savedFontSize) {
+      const parsed = parseInt(savedFontSize)
+      if (!isNaN(parsed) && parsed >= 10 && parsed <= 24) {
+        setFontSize(parsed)
+      }
+    }
+  }, [])
+
+  const handleFontSizeChange = (newSize: number) => {
+    setFontSize(newSize)
+    localStorage.setItem('python-web-ide-font-size', String(newSize))
+  }
+
   // Atalhos de teclado globais
   useEffect(() => {
     const handleGlobalKeyDown = (e: KeyboardEvent) => {
@@ -1527,6 +1545,8 @@ builtins.input = input
                     onImport={importCode}
                     onExportCurrent={exportCurrentTab}
                     onExportAll={exportAllTabs}
+                    fontSize={fontSize}
+                    onFontSizeChange={handleFontSizeChange}
                   />
                   <div className="flex-1 h-[400px] sm:h-[500px] lg:h-[600px]">
                     <PythonEditor
@@ -1539,6 +1559,7 @@ builtins.input = input
                       fileName={activeTab.name}
                       errorLine={errorLine}
                       onRun={executeCode}
+                      fontSize={fontSize}
                     />
                   </div>
                 </div>
