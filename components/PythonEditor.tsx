@@ -36,68 +36,99 @@ function highlightPythonCode(code: string): string {
   const lines = code.split('\n')
   const highlightedLines: string[] = []
 
+  type State =
+    | { type: 'code' }
+    | { type: 'string', char: string, isFString: boolean }
+
   for (const line of lines) {
     let result = ''
     let i = 0
-    let inString = false
-    let stringChar = ''
-    let inComment = false
+    const stack: State[] = [{ type: 'code' }]
 
     while (i < line.length) {
       const char = line[i]
-      const prevChar = i > 0 ? line[i - 1] : ''
+      const currentState = stack[stack.length - 1]
 
-      // Detectar início de comentário (fora de strings)
-      if (char === '#' && !inString) {
-        inComment = true
-        result += `<span class="text-gray-500 dark:text-gray-400 italic">${line.substring(i)}</span>`
-        break
-      }
+      // Estado: STRING
+      if (currentState.type === 'string') {
+        const { char: stringQuote, isFString } = currentState
 
-      // Se estamos em um comentário, apenas adicionar
-      if (inComment) {
-        result += char
-        i++
-        continue
-      }
-
-      // Detectar strings
-      if ((char === '"' || char === "'") && prevChar !== '\\') {
-        if (!inString) {
-          inString = true
-          stringChar = char
-          result += `<span class="text-green-600 dark:text-green-400">${char}`
-        } else if (char === stringChar) {
-          inString = false
-          stringChar = ''
+        // Verificar fim da string
+        // Nota: não lidamos com escapes complexos aqui para simplicidade, mas o básico sim
+        if (char === stringQuote && (i === 0 || line[i - 1] !== '\\' || (i > 1 && line[i - 2] === '\\'))) {
           result += `${char}</span>`
-        } else {
-          result += char
+          stack.pop()
+          i++
+          continue
         }
-        i++
-        continue
-      }
 
-      // Se estamos dentro de uma string, apenas adicionar
-      if (inString) {
+        // F-String: interpolação
+        if (isFString) {
+          // Check for escaped braces {{ or }}
+          if (char === '{' && line[i + 1] === '{') {
+            result += '{{'
+            i += 2
+            continue
+          }
+          if (char === '}' && line[i + 1] === '}') {
+            result += '}}'
+            i += 2
+            continue
+          }
+
+          // Início de interpolação
+          if (char === '{') {
+            result += `</span><span class="text-purple-600 dark:text-purple-400 font-semibold">{</span>`
+            stack.push({ type: 'code' })
+            i++
+            continue
+          }
+        }
+
+        // Conteúdo normal da string
         result += char
         i++
         continue
       }
 
-      // Destacar parênteses, colchetes e chaves
-      if (char === '(' || char === ')') {
-        result += `<span class="text-purple-600 dark:text-purple-400 font-semibold">${char}</span>`
+      // Estado: CÓDIGO (Normal ou dentro de f-string interpolation)
+
+      // Comentário (apenas se não estiver em string, o que já é garantido pelo 'else' do estado)
+      if (char === '#') {
+        result += `<span class="text-gray-500 dark:text-gray-400 italic">${line.substring(i)}</span>`
+        break // Comentário vai até o fim da linha
+      }
+
+      // Início de String
+      if (char === '"' || char === "'") {
+        // Verificar se é f-string
+        // Precisamos olhar para trás. Se estivemos em loop, result já tem o HTML. 
+        // Mas podemos olhar para line[i-1].
+        // Cuidado: se 'f' já foi processado, ele está em 'result' dentro de um span.
+        // Se tivermos f"...", o 'f' foi processado como palavra na iteração anterior.
+        // Vamos assumir que sim.
+
+        let isFString = false
+        if (i > 0) {
+          const prevChar = line[i - 1]
+          if (prevChar === 'f' || prevChar === 'F') {
+            isFString = true
+          }
+        }
+
+        stack.push({ type: 'string', char, isFString })
+        // Se for f-string, mudar a cor base da string? O usuário não pediu, mas verde é padrão.
+        // Dentro da string f-string, o verde continua, exceto nas variáveis.
+        result += `<span class="text-green-600 dark:text-green-400">${char}`
         i++
         continue
       }
-      if (char === '[' || char === ']') {
-        result += `<span class="text-orange-600 dark:text-orange-400 font-semibold">${char}</span>`
-        i++
-        continue
-      }
-      if (char === '{' || char === '}') {
-        result += `<span class="text-pink-600 dark:text-pink-400 font-semibold">${char}</span>`
+
+      // Fim de interpolação f-string (chaveta fechando)
+      // Só se não estivermos na base (stack > 1)
+      if (char === '}' && stack.length > 1) {
+        stack.pop() // Sai do modo code, volta para string
+        result += `<span class="text-purple-600 dark:text-purple-400 font-semibold">}</span><span class="text-green-600 dark:text-green-400">`
         i++
         continue
       }
@@ -124,7 +155,14 @@ function highlightPythonCode(code: string): string {
           j++
         }
 
-        if (keywords.has(word)) {
+        // Verifica se é um 'f' prefixo de string (lookahead)
+        if ((word === 'f' || word === 'F') && (line[j] === '"' || line[j] === "'")) {
+          // É um prefixo de f-string!
+          // Renderiza com cor especial ou como keyword/built-in?
+          // Vamos renderizar como azul escuro (keyword-ish) ou mesmo cor da string?
+          // Python comumente destaca o 'f'.
+          result += `<span class="text-blue-800 dark:text-blue-300 font-bold">${word}</span>`
+        } else if (keywords.has(word)) {
           result += `<span class="text-blue-800 dark:text-blue-300 font-semibold">${word}</span>`
         } else if (builtins.has(word)) {
           result += `<span class="text-cyan-600 dark:text-cyan-400">${word}</span>`
@@ -135,11 +173,31 @@ function highlightPythonCode(code: string): string {
         continue
       }
 
-      // Detectar operadores
-      if (['=', '+', '-', '*', '/', '%', '<', '>', '!'].includes(char)) {
+      // Detectar operadores e pontuação
+      if (['=', '+', '-', '*', '/', '%', '<', '>', '!', '(', ')', '[', ']', '{', '}', ',', '.', ':'].includes(char)) {
         let op = char
         let j = i + 1
-        // Verificar se é um operador composto
+
+        // Operadores compostos e parênteses coloridos
+        if (['(', ')'].includes(char)) {
+          result += `<span class="text-purple-600 dark:text-purple-400 font-semibold">${char}</span>`
+          i++
+          continue
+        }
+        if (['[', ']'].includes(char)) {
+          result += `<span class="text-orange-600 dark:text-orange-400 font-semibold">${char}</span>`
+          i++
+          continue
+        }
+        // Chaves são especiais pois podem ser dicionário OU interpolação.
+        // Se estamos aqui (estado code), são dicionários ou sets.
+        if (['{', '}'].includes(char)) {
+          result += `<span class="text-pink-600 dark:text-pink-400 font-semibold">${char}</span>`
+          i++
+          continue
+        }
+
+        // Operadores normais
         if (j < line.length) {
           const twoCharOp = char + line[j]
           if (['==', '!=', '<=', '>=', '+=', '-=', '*=', '/=', '%=', '//', '**'].includes(twoCharOp)) {
@@ -152,13 +210,15 @@ function highlightPythonCode(code: string): string {
         continue
       }
 
-      // Caractere normal
+      // Caractere desconhecido ou espaço
       result += char
       i++
     }
 
-    // Fechar string se ainda estiver aberta
-    if (inString) {
+    // Fechar spans pendentes ao fim da linha (se string multiline não suportada corretamente neste editor simples)
+    // O editor simples assume string por linha para highlight, geralmente.
+    // Mas se ficou com string aberta na stack?
+    if (stack[stack.length - 1].type === 'string') {
       result += '</span>'
     }
 
