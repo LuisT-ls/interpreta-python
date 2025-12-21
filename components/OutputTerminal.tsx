@@ -11,9 +11,9 @@ interface OutputTerminalProps {
   onInputSubmit?: (value: string) => void
 }
 
-export function OutputTerminal({ 
-  output, 
-  isError = false, 
+export function OutputTerminal({
+  output,
+  isError = false,
   isLoading = false,
   isWaitingInput = false,
   inputPrompt = '',
@@ -56,7 +56,7 @@ export function OutputTerminal({
         </div>
         <span className="text-xs text-gray-400 ml-2">Terminal</span>
       </div>
-      <div 
+      <div
         ref={outputRef}
         className="flex-1 overflow-auto p-4"
       >
@@ -68,13 +68,13 @@ export function OutputTerminal({
         ) : (
           <>
             {output && (
-              <pre 
-                className={`font-mono text-sm whitespace-pre-wrap break-words ${
-                  isError ? 'text-red-400' : 'text-green-400'
-                }`}
+              <pre
+                className={`font-mono text-sm whitespace-pre-wrap break-words ${isError ? 'text-red-400' : 'text-green-400'
+                  }`}
                 style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}
               >
-                {output}
+                {/* Zero-width space prevents browser from stripping leading newlines */}
+                {'\u200B'}{output}
               </pre>
             )}
             {isWaitingInput && (

@@ -721,62 +721,40 @@ except Exception:
 
     try {
       // Configurar captura de stdout e stderr usando batched
-      // IMPORTANTE: O batched envia cada print() como um chunk separado, mas sem \n
-      // Precisamos adicionar \n ao final de cada chunk para preservar as quebras de linha
       // Usar handlers estáveis para evitar problemas de I/O
       const stdoutHandler = (text: string) => {
         try {
-          if (text && typeof text === 'string' && text.length > 0) {
-            // O texto já pode conter \n dentro dele (como em print("\ntexto"))
-            // Não adicionar \n extra se o texto já termina com \n
-            // Mas adicionar \n se não terminar, pois cada print() adiciona uma quebra
-            if (text.endsWith('\n')) {
-              outputBufferRef.current.push(text)
-            } else {
-              outputBufferRef.current.push(text + '\n')
-            }
+          if (text && typeof text === 'string') {
+            outputBufferRef.current.push(text)
 
-            // Atualizar a saída em tempo real para que os print() apareçam imediatamente
+            // Atualizar a saída em tempo real
             const currentOutput = outputBufferRef.current.join('')
             updateTabOutput(activeTabId, currentOutput, false)
           }
         } catch (e) {
-          // Ignorar erros no handler para evitar loops
           console.error('Erro no stdout handler:', e)
         }
       }
 
       const stderrHandler = (text: string) => {
         try {
-          if (text && typeof text === 'string' && text.length > 0) {
+          if (text && typeof text === 'string') {
             // Ignorar KeyboardInterrupt causado por cancelamento do usuário
             if (executionAbortedRef.current && text.includes('KeyboardInterrupt') && text.includes('Execução interrompida pelo usuário')) {
-              return // Não adicionar ao buffer
+              return
             }
-            outputBufferRef.current.push(text + '\n')
+            outputBufferRef.current.push(text)
             // Atualizar a saída em tempo real também para erros
             const currentOutput = outputBufferRef.current.join('')
             updateTabOutput(activeTabId, currentOutput, true)
           }
         } catch (e) {
-          // Ignorar erros no handler para evitar loops
           console.error('Erro no stderr handler:', e)
         }
       }
 
-      // Configurar handlers de forma segura
-      try {
-        pyodide.setStdout({
-          batched: stdoutHandler,
-        })
-
-        pyodide.setStderr({
-          batched: stderrHandler,
-        })
-      } catch (configError) {
-        console.error('Erro ao configurar handlers:', configError)
-        // Continuar mesmo se houver erro na configuração
-      }
+      // Handlers de stdout e stderr configurados diretamente no Python via globals
+      // Não precisamos mais usar pyodide.setStdout/setStderr pois redirecionamos sys.stdout/sys.stderr
 
       // Substituir input() do Python por um sistema que usa input inline no terminal
       // Função que será chamada pelo Python quando input() for executado
@@ -820,21 +798,55 @@ except Exception:
         })
       }
 
-      // Expor a função diretamente no globals do Pyodide
+      // Expor funções diretamente no globals do Pyodide para comunicação
       pyodide.globals.set('__js_request_input', requestInput)
 
+      // Função para saída que será chamada diretamente pelo Python
+      // Isso evita o buffer interno do Pyodide e garante que cada print() com \n seja processado corretamente
+      const jsStdout = (text: string) => {
+        stdoutHandler(text)
+      }
+      pyodide.globals.set('__js_stdout', jsStdout)
+
+      const jsStderr = (text: string) => {
+        stderrHandler(text)
+      }
+      pyodide.globals.set('__js_stderr', jsStderr)
+
       // Substituir input() do Python para usar await diretamente
-      // Como o código será executado de forma assíncrona, podemos usar await
+      // E configurar sys.stdout e sys.stderr para usar nossas funções JS
       pyodide.runPython(`
 import builtins
+import sys
+import io
 
 _original_input = builtins.input
 
-# Obter a função do globals
+# Obter as funções do globals
 __js_request_input = globals()['__js_request_input']
+__js_stdout = globals()['__js_stdout']
+__js_stderr = globals()['__js_stderr']
+
+# Classe personalizada para redirecionar stdout/stderr
+class JSStream(io.TextIOBase):
+    def __init__(self, js_writer):
+        self.js_writer = js_writer
+    
+    def write(self, s):
+        self.js_writer(s)
+        return len(s)
+    
+    def flush(self):
+        pass
+
+# Substituir stdout e stderr
+sys.stdout = JSStream(__js_stdout)
+sys.stderr = JSStream(__js_stderr)
 
 async def input(prompt=''):
     prompt_str = str(prompt) if prompt else ''
+    # Forçar flush antes do input
+    sys.stdout.flush()
     result = await __js_request_input(prompt_str)
     if result is None:
         raise EOFError("EOF when reading a line")
