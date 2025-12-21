@@ -228,7 +228,7 @@ function highlightPythonCode(code: string): string {
   return highlightedLines.join('\n')
 }
 
-export function PythonEditor({ code, onChange, disabled, fileName = 'editor.py', errorLine }: PythonEditorProps) {
+export function PythonEditor({ code, onChange, disabled, fileName = 'editor.py', errorLine, onRun }: PythonEditorProps & { onRun?: () => void }) {
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const highlightRef = useRef<HTMLDivElement>(null)
 
@@ -260,6 +260,13 @@ export function PythonEditor({ code, onChange, disabled, fileName = 'editor.py',
     const textarea = e.currentTarget
     const start = textarea.selectionStart
     const end = textarea.selectionEnd
+
+    // Atalho para executar código (Ctrl + Enter ou Cmd + Enter)
+    if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
+      e.preventDefault()
+      onRun?.()
+      return
+    }
 
     // Mapeamento de caracteres de abertura para fechamento
     const pairs: Record<string, string> = {
@@ -313,6 +320,65 @@ export function PythonEditor({ code, onChange, disabled, fileName = 'editor.py',
     // Tratamento para Tab
     if (e.key === 'Tab') {
       e.preventDefault()
+
+      if (e.shiftKey) {
+        // Shift + Tab: Desindentar
+        const startLineStart = code.lastIndexOf('\n', start - 1) + 1
+        const endLineEnd = code.indexOf('\n', end)
+        const effectiveEnd = endLineEnd === -1 ? code.length : endLineEnd
+
+        // Se houver seleção de múltiplas linhas ou cursor em uma linha
+        // Vamos simplificar: desindentar a linha atual ou as linhas da seleção
+
+        const lines = code.split('\n')
+        let currentLineIndex = code.substring(0, start).split('\n').length - 1
+        const lastLineIndex = code.substring(0, end).split('\n').length - 1
+
+        let newCode = code
+        let charsRemovedCount = 0
+
+        // Iterar sobre as linhas afetadas (da atual até a última da seleção)
+        // Nota:: implementação simplificada para unindentar linha por linha
+        // Precisamos reconstruir o código
+
+        const newLines = [...lines]
+        for (let i = currentLineIndex; i <= lastLineIndex; i++) {
+          const line = newLines[i]
+          if (line.startsWith('    ')) {
+            newLines[i] = line.substring(4)
+            charsRemovedCount += 4 // Aproximado, ajuste fino do cursor seria complexo
+          } else if (line.startsWith('\t')) {
+            newLines[i] = line.substring(1)
+            charsRemovedCount += 1
+          } else {
+            // Tentar remover espaços parciais (menos de 4)
+            const match = line.match(/^(\s+)/)
+            if (match) {
+              const spaces = match[1].length
+              const toRemove = Math.min(spaces, 4)
+              newLines[i] = line.substring(toRemove)
+              charsRemovedCount += toRemove
+            }
+          }
+        }
+
+        newCode = newLines.join('\n')
+
+        if (newCode !== code) {
+          onChange(newCode)
+          // Ajuste simples do cursor: manter posição relativa ou recuar
+          // Se desindentou, recuar cursor
+          setTimeout(() => {
+            textarea.selectionStart = Math.max(0, start - 4) // Aproximação
+            textarea.selectionEnd = Math.max(0, end - (lines.length !== newLines.length ? 0 : 4)) // Aproximação
+          }, 0)
+        }
+        return
+      }
+
+      // Tab normal: Indentar
+      // Se houver seleção multilinhas, indentar todas?
+      // Por enquanto, comportamento simples: inserir 4 espaços na posição do cursor
       const newCode = code.substring(0, start) + '    ' + code.substring(end)
       onChange(newCode)
 

@@ -8,6 +8,7 @@ import { useEditorTabs } from '@/hooks/useEditorTabs'
 import { PythonEditor } from '@/components/PythonEditor'
 import { OutputTerminal } from '@/components/OutputTerminal'
 import { ThemeToggle } from '@/components/ThemeToggle'
+import { AboutModal } from '@/components/AboutModal'
 import { LayoutSelector } from '@/components/LayoutSelector'
 import { EditorTabs } from '@/components/EditorTabs'
 import { ExportMenu } from '@/components/ExportMenu'
@@ -73,26 +74,26 @@ function parsePyodideError(
 ): ParsedError {
   const errorStr = String(error)
   const errorMessage = error instanceof Error ? error.message : errorStr
-  
+
   // Limpar a string do erro removendo prefixos comuns
   let cleanErrorStr = errorStr
     .replace(/^PythonError:\s*/i, '')
     .replace(/^Error:\s*/i, '')
     .trim()
-  
+
   // Inicializar valores padrão
   let errorType = 'Error'
   let errorLine: number | null = null
   let errorDetails = errorMessage
   let isSyntaxError = false
-  
+
   // 1. Detectar tipo de erro
   // Verificar cada tipo de erro conhecido
   for (const errType of PYTHON_ERROR_TYPES) {
     const regex = new RegExp(`\\b${errType}\\b`, 'i')
     if (regex.test(cleanErrorStr)) {
       errorType = errType
-      
+
       // Marcar erros de sintaxe
       if (['SyntaxError', 'IndentationError', 'TabError'].includes(errType)) {
         isSyntaxError = true
@@ -100,24 +101,24 @@ function parsePyodideError(
       break
     }
   }
-  
+
   // 2. Extrair linha do erro do traceback
   // Formato típico: File "<exec>", line X, in <module>
   // ou: File "<exec>", line X, in _run_code
   // ou: line X (para erros de sintaxe simples)
   // Para IndentationError: "expected an indented block after function definition on line X"
-  
+
   // IMPORTANTE: O traceback pode ter múltiplas linhas. Precisamos pegar a linha mais relevante,
   // que geralmente é a última antes do erro (dentro de _run_code), não a linha do await _run_code()
   let lineMatch: RegExpMatchArray | null = null
-  
+
   // Buscar todas as ocorrências de "File ..., line X"
   const allLineMatches = cleanErrorStr.matchAll(/File\s+["<](?:exec|.*?)[">],\s+line\s+(\d+)/gi)
   const lineMatchesArray = Array.from(allLineMatches)
-  
+
   if (lineMatchesArray.length > 0) {
     console.debug('🔍 Linhas encontradas no traceback:', lineMatchesArray.map(m => m[1]))
-    
+
     // Se houver múltiplas linhas no traceback, usar a última (mais próxima do erro)
     // A última linha geralmente é a linha dentro de _run_code onde o erro realmente ocorreu
     if (lineMatchesArray.length > 1) {
@@ -129,7 +130,7 @@ function parsePyodideError(
       console.debug('✅ Linha única no traceback:', lineMatch[1])
     }
   }
-  
+
   // Para IndentationError, procurar padrão especial: "on line X" ou "after function definition on line X"
   if (!lineMatch && (isSyntaxError || cleanErrorStr.includes('IndentationError'))) {
     // Padrão 1: "on line X" ou "at line X"
@@ -147,18 +148,18 @@ function parsePyodideError(
       console.debug('✅ Linha extraída de IndentationError:', indentationMatch[1])
     }
   }
-  
+
   // Se não encontrou no formato File, tentar formato mais simples (comum em SyntaxError)
   if (!lineMatch) {
     lineMatch = cleanErrorStr.match(/line\s+(\d+)/i)
   }
-  
+
   // Tentar extrair de objetos de erro do Python diretamente
   if (!lineMatch && error && typeof error === 'object') {
     try {
       // Pyodide pode expor atributos do erro Python diretamente
       const errorObj = error as any
-      
+
       // Tentar diferentes propriedades comuns
       if (errorObj.lineno !== undefined && typeof errorObj.lineno === 'number' && errorObj.lineno > 0) {
         lineMatch = [`line ${errorObj.lineno}`, String(errorObj.lineno)]
@@ -167,7 +168,7 @@ function parsePyodideError(
       } else if (errorObj.linenumber !== undefined && typeof errorObj.linenumber === 'number' && errorObj.linenumber > 0) {
         lineMatch = [`line ${errorObj.linenumber}`, String(errorObj.linenumber)]
       }
-      
+
       // Tentar acessar via __traceback__ se disponível
       if (!lineMatch && errorObj.__traceback__) {
         try {
@@ -183,7 +184,7 @@ function parsePyodideError(
       // Ignorar erros ao acessar propriedades
     }
   }
-  
+
   // Debug: log para ajudar a identificar problemas
   if (!lineMatch) {
     console.debug('⚠️ Não foi possível extrair linha do erro:', {
@@ -199,7 +200,7 @@ function parsePyodideError(
       hasMapping: lineMapping !== undefined && lineMapping !== null && lineMapping.size > 0
     })
   }
-  
+
   if (lineMatch) {
     const lineNum = parseInt(lineMatch[1], 10)
     console.debug('🔍 Tentando mapear linha do erro:', {
@@ -208,7 +209,7 @@ function parsePyodideError(
       mappingSize: lineMapping?.size || 0,
       mappingEntries: lineMapping ? Array.from(lineMapping.entries()) : []
     })
-    
+
     // Se temos um mapeamento de linhas (para código transformado), usar
     if (lineMapping && lineMapping.size > 0) {
       const mappedLine = lineMapping.get(lineNum)
@@ -220,7 +221,7 @@ function parsePyodideError(
         // Tentar encontrar a linha mais próxima (dentro de 5 linhas)
         let closestLine: number | null = null
         let minDiff = Infinity
-        
+
         for (const [transformedLine, originalLine] of lineMapping.entries()) {
           const diff = Math.abs(transformedLine - lineNum)
           if (diff < minDiff) {
@@ -228,7 +229,7 @@ function parsePyodideError(
             closestLine = originalLine
           }
         }
-        
+
         // Usar linha mais próxima se a diferença for pequena (≤5 linhas)
         if (closestLine !== null && minDiff <= 5) {
           errorLine = closestLine
@@ -241,41 +242,41 @@ function parsePyodideError(
             const trimmed = line.trim()
             return trimmed.startsWith('import ') || trimmed.startsWith('from ')
           }).length
-          
+
           // Calcular offset baseado na estrutura do código transformado
           // Estrutura: imports (se houver) + linha vazia (se houver imports) + def _run_code() + código indentado
           const baseOffset = importsCount > 0 ? importsCount + 2 : 1 // +1 para "async def _run_code():"
-          
+
           if (lineNum > baseOffset) {
             // A linha do erro está dentro do código dentro de _run_code
             const codeLineIndex = lineNum - baseOffset - 1 // -1 porque a primeira linha dentro de _run_code é baseOffset + 1
-            
+
             // Mapear codeLineIndex para linha original
             // Contar todas as linhas (incluindo vazias), mas pular imports
             let codeLineCounter = 0
             let originalLineCounter = 1
-            
+
             for (let i = 0; i < codeLines.length; i++) {
               const line = codeLines[i]
               const trimmed = line.trim()
-              
+
               // Pular apenas imports
               if (trimmed.startsWith('import ') || trimmed.startsWith('from ')) {
                 originalLineCounter++
                 continue
               }
-              
+
               // Esta é uma linha de código (pode ser vazia, comentário, etc.)
               if (codeLineCounter === codeLineIndex) {
                 errorLine = originalLineCounter
                 break
               }
-              
+
               codeLineCounter++
               originalLineCounter++
             }
           }
-          
+
           // Se ainda não encontrou, tentar usar a linha diretamente (último recurso)
           if (!errorLine && lineNum > 0) {
             const codeLines = originalCode.split('\n')
@@ -283,42 +284,42 @@ function parsePyodideError(
               const trimmed = line.trim()
               return trimmed.startsWith('import ') || trimmed.startsWith('from ')
             }).length
-            
+
             // Calcular offset baseado na estrutura do código transformado
             // Estrutura: imports (se houver) + linha vazia (se houver imports) + def _run_code() + código indentado
             const baseOffset = importsCount > 0 ? importsCount + 2 : 1
-            
+
             // Se a linha do erro está dentro do código dentro de _run_code
             if (lineNum > baseOffset) {
               const codeLineIndex = lineNum - baseOffset - 1
-              
+
               // Mapear diretamente: codeLineIndex -> linha original
               // Contar todas as linhas (incluindo vazias), mas pular imports
               let codeLineCounter = 0
               let originalLineCounter = 1
-              
+
               for (let i = 0; i < codeLines.length; i++) {
                 const line = codeLines[i]
                 const trimmed = line.trim()
-                
+
                 // Pular apenas imports
                 if (trimmed.startsWith('import ') || trimmed.startsWith('from ')) {
                   originalLineCounter++
                   continue
                 }
-                
+
                 // Esta é uma linha de código
                 if (codeLineCounter === codeLineIndex) {
                   errorLine = originalLineCounter
                   console.debug('✅ Linha encontrada via fallback direto:', { codeLineIndex, originalLineCounter })
                   break
                 }
-                
+
                 codeLineCounter++
                 originalLineCounter++
               }
             }
-            
+
             // Último recurso: usar a linha diretamente se estiver no range
             if (!errorLine && lineNum > 0 && lineNum <= codeLines.length) {
               errorLine = lineNum
@@ -334,7 +335,7 @@ function parsePyodideError(
         const trimmed = line.trim()
         return trimmed.startsWith('import ') || trimmed.startsWith('from ')
       }).length
-      
+
       // Se a linha está dentro de um range razoável, ajustar
       if (lineNum > importsCount && lineNum <= codeLines.length + importsCount) {
         errorLine = lineNum - importsCount
@@ -346,13 +347,13 @@ function parsePyodideError(
       }
     }
   }
-  
+
   // 3. Extrair mensagem de erro detalhada
   // Para SyntaxError, formato especial
   if (isSyntaxError) {
     const syntaxMatch = cleanErrorStr.match(/SyntaxError:\s*(.+?)(?:\n|$)/i) ||
-                       cleanErrorStr.match(/IndentationError:\s*(.+?)(?:\n|$)/i) ||
-                       cleanErrorStr.match(/TabError:\s*(.+?)(?:\n|$)/i)
+      cleanErrorStr.match(/IndentationError:\s*(.+?)(?:\n|$)/i) ||
+      cleanErrorStr.match(/TabError:\s*(.+?)(?:\n|$)/i)
     if (syntaxMatch) {
       errorDetails = syntaxMatch[1].trim()
     } else {
@@ -376,38 +377,38 @@ function parsePyodideError(
       // Tentar extrair da última linha do traceback
       const lines = cleanErrorStr.split('\n').filter(line => line.trim())
       const lastLine = lines[lines.length - 1] || ''
-      
+
       if (lastLine.includes(':')) {
         const parts = lastLine.split(':')
         if (parts.length > 1) {
           errorDetails = parts.slice(1).join(':').trim()
         }
       }
-      
+
       // Se ainda não encontrou, usar mensagem original (limitada)
       if (!errorDetails || errorDetails === errorMessage) {
         errorDetails = errorMessage.split('\n')[0].trim().substring(0, 200)
       }
     }
   }
-  
+
   // 4. Formatar traceback no estilo Python
   const codeLines = originalCode.split('\n')
   let formattedTraceback = ''
-  
+
   // Adicionar saída capturada se houver (será adicionada antes do traceback)
   formattedTraceback += 'Traceback (most recent call last):\n'
-  
+
   // Determinar linha do erro para exibição
   let displayLine = errorLine
   if (!displayLine && lineMatch) {
     displayLine = parseInt(lineMatch[1], 10)
   }
-  
+
   if (displayLine && displayLine > 0 && displayLine <= codeLines.length) {
     const errorCodeLine = codeLines[displayLine - 1]
     formattedTraceback += `  File "${fileName}", line ${displayLine}, in <module>\n`
-    
+
     if (errorCodeLine !== undefined && errorCodeLine.trim().length > 0) {
       // Mostrar a linha do código (preservar indentação relativa)
       const trimmedLine = errorCodeLine.trimStart()
@@ -416,10 +417,10 @@ function parsePyodideError(
   } else {
     formattedTraceback += `  File "${fileName}", line ?, in <module>\n`
   }
-  
+
   // Adicionar tipo de erro e mensagem
   formattedTraceback += `${errorType}: ${errorDetails}\n`
-  
+
   return {
     type: errorType,
     line: errorLine,
@@ -442,17 +443,18 @@ export default function Home() {
   } = useEditorTabs()
 
   const [isExecuting, setIsExecuting] = useState(false)
+  const [isAboutModalOpen, setIsAboutModalOpen] = useState(false)
   const [errorLine, setErrorLine] = useState<number | null>(null)
   const outputBufferRef = useRef<string[]>([])
   const executionAbortedRef = useRef(false)
   const lineMappingRef = useRef<Map<number, number>>(new Map()) // Mapeia linha transformada -> linha original
-  
+
   // Estados para controle de input inline no terminal
   const [isWaitingInput, setIsWaitingInput] = useState(false)
   const [inputPrompt, setInputPrompt] = useState('')
   const inputResolveRef = useRef<((value: string) => void) | null>(null)
   const inputRejectRef = useRef<((error: any) => void) | null>(null)
-  
+
   // Referência para timeout de validação em tempo real
   const validationTimeoutRef = useRef<NodeJS.Timeout | null>(null)
 
@@ -461,7 +463,7 @@ export default function Home() {
 
   // Referência para o input de arquivo (oculto)
   const fileInputRef = useRef<HTMLInputElement>(null)
-  
+
   /**
    * Validação em tempo real do código Python
    * Detecta erros de sintaxe enquanto o usuário digita
@@ -472,7 +474,7 @@ export default function Home() {
     if (validationTimeoutRef.current) {
       clearTimeout(validationTimeoutRef.current)
     }
-    
+
     // Não validar se:
     // - Pyodide não está carregado
     // - Está executando código
@@ -484,7 +486,7 @@ export default function Home() {
       }
       return
     }
-    
+
     // Debounce: aguardar 800ms após o usuário parar de digitar
     validationTimeoutRef.current = setTimeout(async () => {
       try {
@@ -495,7 +497,7 @@ export default function Home() {
           .replace(/\n/g, '\\n')   // Escapar quebras de linha
           .replace(/\r/g, '\\r')   // Escapar carriage return
           .replace(/\t/g, '\\t')   // Escapar tabs
-        
+
         // Tentar compilar o código usando compile() do Python
         // Isso detecta apenas erros de sintaxe, sem executar o código
         pyodide.runPython(`
@@ -517,10 +519,10 @@ except Exception:
     __syntax_check_passed = True
     __syntax_error_obj = None
 `)
-        
+
         const isValid = pyodide.globals.get('__syntax_check_passed')
         const syntaxError = pyodide.globals.get('__syntax_error_obj')
-        
+
         if (!isValid && syntaxError) {
           // Erro de sintaxe detectado
           try {
@@ -530,7 +532,7 @@ except Exception:
               activeTab.code,
               activeTab.name
             )
-            
+
             // Se for erro de sintaxe, destacar a linha
             if (parsed.isSyntaxError && parsed.line) {
               setErrorLine(parsed.line)
@@ -560,7 +562,7 @@ except Exception:
           // Código válido sintaticamente, limpar erro
           setErrorLine(null)
         }
-        
+
         // Limpar variáveis temporárias
         try {
           pyodide.runPython('del __syntax_check_passed, __syntax_error_obj')
@@ -574,7 +576,7 @@ except Exception:
         console.debug('Erro na validação em tempo real:', err)
       }
     }, 800) // 800ms de debounce para evitar validações excessivas
-    
+
     // Cleanup: limpar timeout quando componente desmontar ou dependências mudarem
     return () => {
       if (validationTimeoutRef.current) {
@@ -599,7 +601,7 @@ except Exception:
   // Função para exportar todas as abas como arquivo .zip
   const exportAllTabs = useCallback(async () => {
     const zip = new JSZip()
-    
+
     // Adicionar cada aba como um arquivo .py no ZIP
     tabs.forEach((tab) => {
       zip.file(tab.name, tab.code)
@@ -649,12 +651,14 @@ except Exception:
     event.target.value = ''
   }
 
+
+
   const stopExecution = useCallback(() => {
     executionAbortedRef.current = true
     setIsExecuting(false)
     setIsWaitingInput(false)
     setInputPrompt('')
-    
+
     // Rejeitar qualquer input pendente com KeyboardInterrupt para parar a execução
     if (inputRejectRef.current && pyodide) {
       try {
@@ -689,17 +693,17 @@ except Exception:
       inputRejectRef.current = null
     }
     inputResolveRef.current = null
-    
+
     // Limpar handlers de stdout/stderr
     if (pyodide) {
       try {
-        pyodide.setStdout({ batched: () => {} })
-        pyodide.setStderr({ batched: () => {} })
+        pyodide.setStdout({ batched: () => { } })
+        pyodide.setStderr({ batched: () => { } })
       } catch (e) {
         console.error('Erro ao limpar handlers:', e)
       }
     }
-    
+
     // Adicionar mensagem de cancelamento à saída
     const currentOutput = activeTab.output
     const cancelMessage = '\n\n⚠️ Execução interrompida pelo usuário'
@@ -731,7 +735,7 @@ except Exception:
             } else {
               outputBufferRef.current.push(text + '\n')
             }
-            
+
             // Atualizar a saída em tempo real para que os print() apareçam imediatamente
             const currentOutput = outputBufferRef.current.join('')
             updateTabOutput(activeTabId, currentOutput, false)
@@ -801,14 +805,14 @@ except Exception:
             }
             return
           }
-          
+
           // IMPORTANTE: Atualizar a saída antes de solicitar input
           // Isso garante que todos os print() anteriores sejam exibidos
           const currentOutput = outputBufferRef.current.join('')
           if (currentOutput) {
             updateTabOutput(activeTabId, currentOutput, false)
           }
-          
+
           inputResolveRef.current = resolve
           inputRejectRef.current = reject
           setInputPrompt(String(prompt) || '')
@@ -844,17 +848,17 @@ builtins.input = input
       const lines = activeTab.code.split('\n')
       const imports: string[] = []
       const codeLines: string[] = []
-      
+
       // Separar imports e código
       for (let i = 0; i < lines.length; i++) {
         const line = lines[i]
         const trimmed = line.trim()
-        
+
         // Pular linhas vazias no início
         if (trimmed.length === 0 && imports.length === 0 && codeLines.length === 0) {
           continue
         }
-        
+
         // Detectar imports (incluindo imports com comentários inline)
         if (trimmed.startsWith('import ') || trimmed.startsWith('from ')) {
           // Remover comentários inline dos imports se houver
@@ -867,21 +871,21 @@ builtins.input = input
           codeLines.push(line)
         }
       }
-      
+
       // Transformar o código para que input() funcione automaticamente
       let transformedCode = codeLines.join('\n')
-      
+
       // Função auxiliar para encontrar o fechamento correto de input()
       const findInputClosing = (code: string, startPos: number): number => {
         let depth = 1
         let i = startPos + 6 // "input(" tem 6 caracteres
         let inString = false
         let stringChar = ''
-        
+
         while (i < code.length && depth > 0) {
           const char = code[i]
           const prevChar = i > 0 ? code[i - 1] : ''
-          
+
           // Detectar strings (simples ou duplas), ignorando escapes
           if ((char === '"' || char === "'") && prevChar !== '\\') {
             if (!inString) {
@@ -892,25 +896,25 @@ builtins.input = input
               stringChar = ''
             }
           }
-          
+
           if (!inString) {
             if (char === '(') depth++
             if (char === ')') depth--
           }
-          
+
           i++
         }
-        
+
         return depth === 0 ? i - 1 : -1
       }
-      
+
       // Primeiro, substituir input() com métodos encadeados: input(...).strip(), input(...).lower(), etc
       // Processar de trás para frente para não afetar os índices
       let searchPos = transformedCode.length
       while (true) {
         const lastInputPos = transformedCode.lastIndexOf('input(', searchPos)
         if (lastInputPos === -1) break
-        
+
         const closingPos = findInputClosing(transformedCode, lastInputPos)
         if (closingPos !== -1) {
           // Verificar se há um método encadeado depois
@@ -923,42 +927,42 @@ builtins.input = input
             transformedCode = beforeInput + '(await ' + inputCall + ')' + afterInputCall
           }
         }
-        
+
         searchPos = lastInputPos - 1
         if (searchPos < 0) break
       }
-      
+
       // Substituir input() de forma robusta
       // Processa de trás para frente para não afetar os índices
       let inputCounter = 0
       const inputReplacements: Array<{ original: string; replacement: string; position: number }> = []
-      
+
       searchPos = transformedCode.length
       while (true) {
         const lastInputPos = transformedCode.lastIndexOf('input(', searchPos)
         if (lastInputPos === -1) break
-        
+
         const closingPos = findInputClosing(transformedCode, lastInputPos)
         if (closingPos === -1) {
           searchPos = lastInputPos - 1
           if (searchPos < 0) break
           continue
         }
-        
+
         // Extrair a chamada input(...)
         const inputCall = transformedCode.substring(lastInputPos, closingPos + 1)
         const beforeInput = transformedCode.substring(0, lastInputPos)
         const afterInput = transformedCode.substring(closingPos + 1)
-        
+
         // Verificar se está dentro de uma chamada de função como int(), float(), str()
         // Padrão: função(input(...))
         const funcMatch = beforeInput.match(/(\w+)\s*\(\s*$/)
         const closingParenMatch = afterInput.match(/^\s*\)/)
-        
+
         if (funcMatch && closingParenMatch) {
           // Está dentro de uma função, precisa extrair para variável temporária
           const funcName = funcMatch[1]
-          
+
           // Encontrar início da chamada da função externa
           const funcCallStart = beforeInput.lastIndexOf(funcName + '(', lastInputPos)
           if (funcCallStart !== -1) {
@@ -967,11 +971,11 @@ builtins.input = input
             let funcPos = funcCallStart + funcName.length + 1
             let funcInString = false
             let funcStringChar = ''
-            
+
             while (funcPos < transformedCode.length && funcDepth > 0) {
               const char = transformedCode[funcPos]
               const prevChar = funcPos > 0 ? transformedCode[funcPos - 1] : ''
-              
+
               if ((char === '"' || char === "'") && prevChar !== '\\') {
                 if (!funcInString) {
                   funcInString = true
@@ -981,42 +985,42 @@ builtins.input = input
                   funcStringChar = ''
                 }
               }
-              
+
               if (!funcInString) {
                 if (char === '(') funcDepth++
                 if (char === ')') funcDepth--
               }
-              
+
               funcPos++
             }
-            
+
             if (funcDepth === 0) {
               const funcCallEnd = funcPos - 1
-              
+
               // Encontrar início da linha para obter indentação
               let lineStart = beforeInput.lastIndexOf('\n', funcCallStart)
               if (lineStart === -1) lineStart = 0
               else lineStart += 1
-              
+
               const lineBeforeFunc = beforeInput.substring(lineStart, funcCallStart)
               const indentMatch = lineBeforeFunc.match(/^(\s*)/)
               const indent = indentMatch ? indentMatch[1] : ''
-              
+
               // Verificar se há atribuição antes (ex: variavel = int(input(...)))
               const assignmentMatch = lineBeforeFunc.match(/^(\s*)(\w+)\s*=\s*$/)
-              
+
               if (assignmentMatch) {
                 // Há atribuição, substituir a linha inteira
                 const fullLine = transformedCode.substring(lineStart, funcCallEnd + 1)
                 const varName = assignmentMatch[2]
-                
+
                 inputCounter++
                 const tempVar = `__input_temp_${inputCounter}`
-                
+
                 // Extrair a parte após o = (a função com input)
                 const afterEquals = fullLine.substring(fullLine.indexOf('=') + 1).trim()
                 const replacement = `${indent}${tempVar} = await ${inputCall}\n${indent}${varName} = ${afterEquals.replace(inputCall, tempVar)}`
-                
+
                 inputReplacements.push({
                   original: fullLine,
                   replacement,
@@ -1025,36 +1029,36 @@ builtins.input = input
               } else {
                 // Apenas função, substituir função(input(...))
                 const fullFuncCall = transformedCode.substring(funcCallStart, funcCallEnd + 1)
-                
+
                 inputCounter++
                 const tempVar = `__input_temp_${inputCounter}`
-                
+
                 const replacement = `${indent}${tempVar} = await ${inputCall}\n${indent}${fullFuncCall.replace(inputCall, tempVar)}`
-                
+
                 inputReplacements.push({
                   original: fullFuncCall,
                   replacement,
                   position: funcCallStart
                 })
               }
-              
+
               searchPos = lineStart - 1
               continue
             }
           }
         }
-        
+
         // Caso simples: apenas adicionar await
         inputReplacements.push({
           original: inputCall,
           replacement: `await ${inputCall}`,
           position: lastInputPos
         })
-        
+
         searchPos = lastInputPos - 1
         if (searchPos < 0) break
       }
-      
+
       // Aplicar substituições de trás para frente
       inputReplacements.sort((a, b) => b.position - a.position)
       for (const replacement of inputReplacements) {
@@ -1062,28 +1066,28 @@ builtins.input = input
         const after = transformedCode.substring(replacement.position + replacement.original.length)
         transformedCode = before + replacement.replacement + after
       }
-      
+
       // Construir o código final com imports no nível superior
       // Garantir que os imports sejam executados primeiro
       const importsCode = imports.length > 0 ? imports.join('\n') + '\n\n' : ''
-      
+
       // Criar mapeamento de linhas: linha no código transformado -> linha no código original
       // IMPORTANTE: Mapear TODAS as linhas, incluindo vazias, comentários E IMPORTS
-      
+
       // Primeiro, criar mapeamento para imports (executados no nível superior)
       // Estrutura do código transformado:
       // - Se há imports: imports (N linhas, começando na linha 1) + linha vazia + def + código
       // - Se não há imports: def + código
       let transformedLineNum = 1
-      
+
       // Mapear linhas dos imports (se houver)
       const importLineToOriginalLine = new Map<number, number>()
       let originalLineNum = 1
-      
+
       for (let i = 0; i < lines.length; i++) {
         const originalLine = lines[i]
         const trimmed = originalLine.trim()
-        
+
         // Se é um import, mapear para a linha do código transformado
         if (trimmed.startsWith('import ') || trimmed.startsWith('from ')) {
           // Encontrar qual import é este (comparar com a lista de imports)
@@ -1093,7 +1097,7 @@ builtins.input = input
             const normalizedOriginal = trimmed.split('#')[0].trim() // Remover comentários inline
             return normalizedImport === normalizedOriginal
           })
-          
+
           if (importIndex !== -1) {
             // Mapear: linha do código transformado (onde está o import) -> linha original
             const importTransformedLine = importIndex + 1 // Imports começam na linha 1
@@ -1104,34 +1108,34 @@ builtins.input = input
           originalLineNum++
           continue
         }
-        
+
         originalLineNum++
       }
-      
+
       // Criar mapeamento para código dentro de _run_code
       const codeLineToOriginalLine = new Map<number, number>()
       originalLineNum = 1
       let codeLineCounter = 0
-      
+
       for (let i = 0; i < lines.length; i++) {
         const originalLine = lines[i]
         const trimmed = originalLine.trim()
-        
+
         // Pular apenas imports (já mapeados acima)
         if (trimmed.startsWith('import ') || trimmed.startsWith('from ')) {
           originalLineNum++
           continue
         }
-        
+
         // Mapear TODAS as outras linhas (incluindo vazias, comentários, etc.)
         codeLineToOriginalLine.set(codeLineCounter, originalLineNum)
         codeLineCounter++
         originalLineNum++
       }
-      
+
       console.log('codeLineToOriginalLine criado:', Array.from(codeLineToOriginalLine.entries()))
       console.log('importLineToOriginalLine criado:', Array.from(importLineToOriginalLine.entries()))
-      
+
       // Calcular onde começa o código dentro de _run_code
       // Estrutura do código transformado:
       // - Se há imports: imports (N linhas) + linha vazia (1 linha) + def (1 linha) = N + 2
@@ -1143,10 +1147,10 @@ builtins.input = input
         transformedLineNum = 1
       }
       transformedLineNum++ // linha do "async def _run_code():"
-      
+
       console.log('Linha inicial do código dentro de _run_code:', transformedLineNum)
       console.log('codeLineToOriginalLine:', Array.from(codeLineToOriginalLine.entries()))
-      
+
       // Mapear linhas do código dentro de _run_code
       const codeLinesArray = transformedCode.split('\n')
       const indentedCode = codeLinesArray.map((line, codeIndex) => {
@@ -1165,22 +1169,22 @@ builtins.input = input
             console.log(`⚠️ Usando fallback: linha transformada ${transformedLineNum} -> linha original ${fallbackLine}`)
           }
         }
-        
+
         // Incrementar após mapear (sempre, mesmo para linhas vazias)
         transformedLineNum++
-        
+
         // Não indentar linhas vazias, mas ainda contar no mapeamento
         if (line.trim().length === 0) {
           return ''
         }
-        
+
         return '    ' + line
       }).join('\n')
-      
+
       console.log('Mapeamento final criado:', Array.from(lineMappingRef.current.entries()))
-      
+
       const wrappedCode = `${importsCode}async def _run_code():\n${indentedCode}\n\n# Executar o código assíncrono\nawait _run_code()`
-      
+
       // Debug: verificar se os imports estão sendo capturados
       console.log('=== DEBUG EXECUÇÃO ===')
       console.log('Imports detectados:', imports.length > 0 ? imports : 'Nenhum import detectado')
@@ -1191,7 +1195,7 @@ builtins.input = input
       console.log('Código final (primeiras 30 linhas):')
       console.log(wrappedCode.split('\n').slice(0, 30).join('\n'))
       console.log('======================')
-      
+
       // Verificar se foi cancelado antes de executar
       if (executionAbortedRef.current) {
         updateTabOutput(activeTabId, '⚠️ Execução interrompida pelo usuário', false)
@@ -1211,7 +1215,7 @@ builtins.input = input
             return null
           }
         }
-        
+
         // Tentar obter traceback completo do Pyodide se disponível
         try {
           // Pyodide pode ter um método para obter o traceback completo
@@ -1220,14 +1224,14 @@ builtins.input = input
             if (fullTraceback) {
               // Criar um novo erro com traceback completo
               const enhancedError = new Error(String(err))
-              ;(enhancedError as any).pyodideTraceback = fullTraceback
+                ; (enhancedError as any).pyodideTraceback = fullTraceback
               throw enhancedError
             }
           }
         } catch {
           // Se falhar, continuar com o erro original
         }
-        
+
         throw err
       })
 
@@ -1242,17 +1246,17 @@ builtins.input = input
       // Combinar stdout/stderr com o resultado
       // Juntar todos os chunks - cada chunk já tem \n no final agora
       let finalOutput = outputBufferRef.current.join('')
-      
+
       // IMPORTANTE: Não adicionar \n extra se o chunk já termina com \n
       // Isso garante que \n dentro das strings sejam preservados corretamente
       finalOutput = finalOutput.replace(/\n\n+/g, '\n\n') // Limitar múltiplas quebras consecutivas
-      
+
       // Normalizar quebras de linha (converter \r\n para \n)
       finalOutput = finalOutput.replace(/\r\n/g, '\n').replace(/\r/g, '\n')
-      
+
       // Remover quebras de linha extras no final (mas manter pelo menos uma se houver conteúdo)
       finalOutput = finalOutput.replace(/\n+$/, finalOutput.trim() ? '\n' : '')
-      
+
       // Se houver um resultado de retorno (não apenas print), adicionar
       if (result !== undefined && result !== null && result !== '') {
         const resultStr = String(result)
@@ -1275,7 +1279,7 @@ builtins.input = input
       const errorStr = String(err)
       const isKeyboardInterrupt = errorStr.includes('KeyboardInterrupt')
       const isUserCancelled = errorStr.includes('Execução interrompida pelo usuário') || executionAbortedRef.current
-      
+
       // Se foi cancelado pelo usuário, mostrar apenas mensagem de cancelamento
       if (isKeyboardInterrupt && isUserCancelled) {
         const currentOutput = outputBufferRef.current.join('')
@@ -1284,7 +1288,7 @@ builtins.input = input
         setErrorLine(null)
         return
       }
-      
+
       // Também verificar se foi cancelado (mesmo sem KeyboardInterrupt explícito)
       if (executionAbortedRef.current) {
         const currentOutput = outputBufferRef.current.join('')
@@ -1293,10 +1297,10 @@ builtins.input = input
         setErrorLine(null)
         return
       }
-      
+
       // Capturar qualquer saída que possa ter sido gerada antes do erro
       const capturedOutput = outputBufferRef.current.join('')
-      
+
       // Debug: log do erro antes de parsear
       console.log('=== ERRO CAPTURADO ===')
       console.log('Erro:', err)
@@ -1308,7 +1312,7 @@ builtins.input = input
       }
       console.log('Mapeamento disponível:', Array.from(lineMappingRef.current.entries()))
       console.log('=====================')
-      
+
       // Usar a função utilitária para parsear o erro
       const parsedError = parsePyodideError(
         err,
@@ -1316,7 +1320,7 @@ builtins.input = input
         activeTab.name,
         lineMappingRef.current
       )
-      
+
       // Debug: log do resultado do parsing
       console.log('=== RESULTADO DO PARSING ===')
       console.log('Tipo:', parsedError.type)
@@ -1324,24 +1328,24 @@ builtins.input = input
       console.log('Mensagem:', parsedError.message)
       console.log('É erro de sintaxe:', parsedError.isSyntaxError)
       console.log('===========================')
-      
+
       // Definir a linha do erro no editor
       setErrorLine(parsedError.line)
-      
+
       // Formatar saída de erro completa
       let errorOutput = ''
-      
+
       // Se houver saída capturada antes do erro, incluir
       if (capturedOutput.trim()) {
         errorOutput = capturedOutput + '\n'
       }
-      
+
       // Adicionar traceback formatado
       errorOutput += parsedError.formattedTraceback
-      
+
       // Adicionar mensagem de saída do processo
       errorOutput += '\n** Process exited - Return Code: 1 **\n'
-      
+
       // Atualizar saída do terminal com o erro formatado
       updateTabOutput(activeTabId, errorOutput || 'Erro ao executar código', true)
     } finally {
@@ -1357,8 +1361,38 @@ builtins.input = input
     }
   }
 
+  // Atalhos de teclado globais
+  useEffect(() => {
+    const handleGlobalKeyDown = (e: KeyboardEvent) => {
+      // Ctrl + Enter ou F8: Executar código
+      if (((e.ctrlKey || e.metaKey) && e.key === 'Enter') || e.key === 'F8') {
+        e.preventDefault()
+        executeCode()
+        return
+      }
+
+      // F1: Abrir modal Sobre
+      if (e.key === 'F1') {
+        e.preventDefault()
+        setIsAboutModalOpen(true)
+        return
+      }
+
+      // F9: Atalho alternativo para parar execução (opcional, mas útil)
+      if (e.key === 'F9' && isExecuting) {
+        e.preventDefault()
+        stopExecution()
+        return
+      }
+    }
+
+    window.addEventListener('keydown', handleGlobalKeyDown)
+    return () => window.removeEventListener('keydown', handleGlobalKeyDown)
+  }, [executeCode, isExecuting, stopExecution])
+
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-gray-950 transition-colors">
+      <AboutModal isOpen={isAboutModalOpen} onClose={() => setIsAboutModalOpen(false)} />
       {/* Header */}
       <header className="sticky top-0 z-10 bg-white/80 dark:bg-gray-900/80 backdrop-blur-sm border-b border-gray-200 dark:border-gray-800">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
@@ -1379,6 +1413,16 @@ builtins.input = input
             </div>
             <div className="flex items-center gap-3">
               {isMounted && <LayoutSelector currentLayout={layout} onLayoutChange={changeLayout} />}
+              <button
+                onClick={() => setIsAboutModalOpen(true)}
+                className="p-2 text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 transition-colors rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800"
+                title="Sobre"
+                aria-label="Sobre"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+              </button>
               <ThemeToggle />
             </div>
           </div>
@@ -1431,7 +1475,7 @@ builtins.input = input
                   </>
                 )}
               </button>
-              
+
               {isExecuting && (
                 <button
                   onClick={stopExecution}
@@ -1451,17 +1495,15 @@ builtins.input = input
             {/* Layout dinâmico baseado na escolha do usuário */}
             {isMounted && (
               <div
-                className={`${
-                  layout === 'bottom' || layout === 'top'
-                    ? 'flex flex-col gap-4'
-                    : 'grid grid-cols-1 lg:grid-cols-2 gap-4'
-                }`}
+                className={`${layout === 'bottom' || layout === 'top'
+                  ? 'flex flex-col gap-4'
+                  : 'grid grid-cols-1 lg:grid-cols-2 gap-4'
+                  }`}
               >
                 {/* Editor Section */}
                 <div
-                  className={`bg-white dark:bg-gray-900 rounded-lg shadow-lg border border-gray-200 dark:border-gray-800 overflow-hidden flex flex-col ${
-                    layout === 'top' ? 'order-2' : layout === 'left' ? 'lg:order-2 order-1' : 'order-1'
-                  }`}
+                  className={`bg-white dark:bg-gray-900 rounded-lg shadow-lg border border-gray-200 dark:border-gray-800 overflow-hidden flex flex-col ${layout === 'top' ? 'order-2' : layout === 'left' ? 'lg:order-2 order-1' : 'order-1'
+                    }`}
                 >
                   {/* Tabs */}
                   <EditorTabs
@@ -1484,15 +1526,15 @@ builtins.input = input
                       disabled={loading || isExecuting}
                       fileName={activeTab.name}
                       errorLine={errorLine}
+                      onRun={executeCode}
                     />
                   </div>
                 </div>
 
                 {/* Terminal Section */}
                 <div
-                  className={`bg-white dark:bg-gray-900 rounded-lg shadow-lg border border-gray-200 dark:border-gray-800 overflow-hidden ${
-                    layout === 'top' ? 'order-1' : layout === 'left' ? 'lg:order-1 order-2' : 'order-2'
-                  }`}
+                  className={`bg-white dark:bg-gray-900 rounded-lg shadow-lg border border-gray-200 dark:border-gray-800 overflow-hidden ${layout === 'top' ? 'order-1' : layout === 'left' ? 'lg:order-1 order-2' : 'order-2'
+                    }`}
                 >
                   <div className="h-[300px] sm:h-[400px] lg:h-[600px]">
                     <OutputTerminal
@@ -1505,15 +1547,15 @@ builtins.input = input
                         // Adicionar o prompt e o valor digitado à saída antes de limpar o estado
                         const promptText = inputPrompt || ''
                         const inputLine = promptText + value + '\n'
-                        
+
                         // Adicionar à saída atual
                         const currentOutput = activeTab.output
                         const newOutput = currentOutput + inputLine
                         updateTabOutput(activeTabId, newOutput, false)
-                        
+
                         // Adicionar também ao buffer para manter consistência
                         outputBufferRef.current.push(inputLine)
-                        
+
                         setIsWaitingInput(false)
                         setInputPrompt('')
                         if (inputResolveRef.current) {
