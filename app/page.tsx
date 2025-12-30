@@ -7,6 +7,7 @@ import { usePyodide } from '@/hooks/usePyodide'
 import { useLayout } from '@/hooks/useLayout'
 import { useEditorTabs } from '@/hooks/useEditorTabs'
 import { useZenMode } from '@/hooks/useZenMode'
+import { useSyntaxValidation } from '@/hooks/useSyntaxValidation'
 import { PythonEditor } from '@/components/PythonEditor'
 import { OutputTerminal } from '@/components/OutputTerminal'
 import { ThemeToggle } from '@/components/ThemeToggle'
@@ -448,7 +449,6 @@ export default function Home() {
 
   const [isExecuting, setIsExecuting] = useState(false)
   const [isAboutModalOpen, setIsAboutModalOpen] = useState(false)
-  const [errorLine, setErrorLine] = useState<number | null>(null)
   const outputBufferRef = useRef<string[]>([])
   const executionAbortedRef = useRef(false)
   const lineMappingRef = useRef<Map<number, number>>(new Map()) // Mapeia linha transformada -> linha original
@@ -459,12 +459,19 @@ export default function Home() {
   const inputResolveRef = useRef<((value: string) => void) | null>(null)
   const inputRejectRef = useRef<((error: any) => void) | null>(null)
 
-  // Referência para timeout de validação em tempo real
-  const validationTimeoutRef = useRef<NodeJS.Timeout | null>(null)
-
   const { pyodide, loading, error } = usePyodide()
   const { layout, changeLayout, isMounted } = useLayout()
   const { isZenMode, toggleZenMode, isMounted: isZenMounted } = useZenMode()
+
+  // Validação em tempo real de sintaxe
+  const { errorLine, setErrorLine } = useSyntaxValidation({
+    pyodide,
+    loading,
+    isExecuting,
+    code: activeTab.code,
+    fileName: activeTab.name,
+    debounceMs: 800,
+  })
 
   // Referência para o input de arquivo (oculto)
   const fileInputRef = useRef<HTMLInputElement>(null)
@@ -474,127 +481,6 @@ export default function Home() {
 
   // Estado para notificação de compartilhamento
   const [shareNotification, setShareNotification] = useState<string | null>(null)
-
-  /**
-   * Validação em tempo real do código Python
-   * Detecta erros de sintaxe enquanto o usuário digita
-   * Apenas valida erros de sintaxe (SyntaxError, IndentationError, TabError)
-   */
-  useEffect(() => {
-    // Limpar timeout anterior se existir
-    if (validationTimeoutRef.current) {
-      clearTimeout(validationTimeoutRef.current)
-    }
-
-    // Não validar se:
-    // - Pyodide não está carregado
-    // - Está executando código
-    // - Código está vazio
-    if (!pyodide || loading || isExecuting || !activeTab.code.trim()) {
-      // Se código está vazio, limpar erro
-      if (!activeTab.code.trim()) {
-        setErrorLine(null)
-      }
-      return
-    }
-
-    // Debounce: aguardar 800ms após o usuário parar de digitar
-    validationTimeoutRef.current = setTimeout(async () => {
-      try {
-        // Escapar o código para uso em string Python
-        const escapedCode = activeTab.code
-          .replace(/\\/g, '\\\\')  // Escapar backslashes
-          .replace(/"/g, '\\"')    // Escapar aspas duplas
-          .replace(/\n/g, '\\n')   // Escapar quebras de linha
-          .replace(/\r/g, '\\r')   // Escapar carriage return
-          .replace(/\t/g, '\\t')   // Escapar tabs
-
-        // Tentar compilar o código usando compile() do Python
-        // Isso detecta apenas erros de sintaxe, sem executar o código
-        pyodide.runPython(`
-try:
-    compile("""${escapedCode}""", "${activeTab.name}", "exec")
-    __syntax_check_passed = True
-    __syntax_error_obj = None
-except SyntaxError as e:
-    __syntax_check_passed = False
-    __syntax_error_obj = e
-except IndentationError as e:
-    __syntax_check_passed = False
-    __syntax_error_obj = e
-except TabError as e:
-    __syntax_check_passed = False
-    __syntax_error_obj = e
-except Exception:
-    # Outros erros não são de sintaxe, considerar válido para validação em tempo real
-    __syntax_check_passed = True
-    __syntax_error_obj = None
-`)
-
-        const isValid = pyodide.globals.get('__syntax_check_passed')
-        const syntaxError = pyodide.globals.get('__syntax_error_obj')
-
-        if (!isValid && syntaxError) {
-          // Erro de sintaxe detectado
-          try {
-            // Parsear o erro
-            const parsed = parsePyodideError(
-              syntaxError,
-              activeTab.code,
-              activeTab.name
-            )
-
-            // Se for erro de sintaxe, destacar a linha
-            if (parsed.isSyntaxError && parsed.line) {
-              setErrorLine(parsed.line)
-            } else {
-              setErrorLine(null)
-            }
-          } catch (parseErr) {
-            // Se falhar ao parsear, tentar extrair linha diretamente
-            try {
-              const errorStr = String(syntaxError)
-              const lineMatch = errorStr.match(/line\s+(\d+)/i)
-              if (lineMatch) {
-                const lineNum = parseInt(lineMatch[1], 10)
-                if (lineNum > 0 && lineNum <= activeTab.code.split('\n').length) {
-                  setErrorLine(lineNum)
-                } else {
-                  setErrorLine(null)
-                }
-              } else {
-                setErrorLine(null)
-              }
-            } catch {
-              setErrorLine(null)
-            }
-          }
-        } else {
-          // Código válido sintaticamente, limpar erro
-          setErrorLine(null)
-        }
-
-        // Limpar variáveis temporárias
-        try {
-          pyodide.runPython('del __syntax_check_passed, __syntax_error_obj')
-        } catch {
-          // Ignorar erros ao limpar
-        }
-      } catch (err) {
-        // Se houver erro na validação, não fazer nada
-        // Isso pode acontecer se o código tiver caracteres especiais problemáticos
-        // Não definir erro para não confundir o usuário
-        console.debug('Erro na validação em tempo real:', err)
-      }
-    }, 800) // 800ms de debounce para evitar validações excessivas
-
-    // Cleanup: limpar timeout quando componente desmontar ou dependências mudarem
-    return () => {
-      if (validationTimeoutRef.current) {
-        clearTimeout(validationTimeoutRef.current)
-      }
-    }
-  }, [activeTab.code, activeTab.name, pyodide, loading, isExecuting])
 
   // Função para exportar apenas a aba atual como arquivo .py
   const exportCurrentTab = useCallback(() => {
@@ -1613,15 +1499,15 @@ builtins.input = input
       {/* Header */}
       {(!isZenMode || !isZenMounted) && (
         <header className="sticky top-0 z-10 bg-white/95 dark:bg-gray-900/95 backdrop-blur-md border-b border-gray-200/50 dark:border-gray-800/50 shadow-sm">
-          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-            <div className="flex items-center justify-between h-16">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+          <div className="flex items-center justify-between h-16">
               {/* Logo e Título */}
               <div className="flex items-center gap-2 sm:gap-3 group min-w-0">
                 <div className="relative flex-shrink-0">
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img
-                    src="/logo.png"
-                    alt="Interpretador Python Web - Execute código Python no navegador"
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src="/logo.png"
+                alt="Interpretador Python Web - Execute código Python no navegador"
                     className="h-8 sm:h-9 w-auto object-contain transition-transform duration-300 group-hover:scale-110"
                     width={36}
                     height={36}
@@ -1630,19 +1516,19 @@ builtins.input = input
                 </div>
                 <div className="flex flex-col min-w-0">
                   <h1 className="text-base sm:text-lg font-bold text-gray-900 dark:text-gray-100 leading-tight truncate">
-                    Interpretador Python Web
-                  </h1>
+                Interpretador Python Web
+              </h1>
                   <span className="text-xs text-gray-500 dark:text-gray-400 hidden lg:inline">
                     Execute código Python no navegador
                   </span>
-                </div>
+            </div>
               </div>
 
               {/* Controles */}
               <div className="flex items-center gap-1.5 sm:gap-2 flex-shrink-0">
                 {/* Grupo: Layout e Modo Zen */}
                 <div className="hidden sm:flex items-center gap-1.5 sm:gap-2 px-1.5 sm:px-2 py-1 rounded-lg bg-gray-50/50 dark:bg-gray-800/50 border border-gray-200/50 dark:border-gray-700/50">
-                  {isMounted && <LayoutSelector currentLayout={layout} onLayoutChange={changeLayout} />}
+              {isMounted && <LayoutSelector currentLayout={layout} onLayoutChange={changeLayout} />}
                   <div className="w-px h-5 sm:h-6 bg-gray-300 dark:bg-gray-700" />
                   <button
                     onClick={toggleZenMode}
@@ -1696,25 +1582,25 @@ builtins.input = input
 
                 {/* Grupo: Informações e Tema */}
                 <div className="flex items-center gap-0.5 sm:gap-1">
-                  <button
-                    onClick={() => setIsAboutModalOpen(true)}
+              <button
+                onClick={() => setIsAboutModalOpen(true)}
                     className="relative p-2 sm:p-2.5 text-gray-600 dark:text-gray-400 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800 hover:text-gray-900 dark:hover:text-gray-200 transition-all duration-200 group"
                     title="Sobre o Interpretador Python Web (F1)"
-                    aria-label="Sobre"
-                  >
-                    <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                    </svg>
+                aria-label="Sobre"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
                     <span className="absolute -bottom-1 left-1/2 -translate-x-1/2 text-[10px] text-gray-400 dark:text-gray-600 opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap hidden sm:block">
                       F1
                     </span>
-                  </button>
-                  <ThemeToggle />
+              </button>
+              <ThemeToggle />
                 </div>
-              </div>
             </div>
           </div>
-        </header>
+        </div>
+      </header>
       )}
 
       {/* Main Content */}
@@ -1732,54 +1618,54 @@ builtins.input = input
           <div className={`space-y-4 ${isZenMode ? 'h-screen flex flex-col' : ''}`}>
             {/* Execute and Stop Buttons */}
             {!isZenMode && (
-              <div className="flex justify-center items-center gap-3">
-                <button
-                  onClick={executeCode}
-                  disabled={loading || isExecuting || !pyodide}
-                  className="px-8 py-3 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-400 disabled:cursor-not-allowed text-white font-semibold rounded-lg shadow-lg hover:shadow-xl transform hover:scale-105 transition-all duration-200 flex items-center gap-2"
-                >
-                  {isExecuting ? (
-                    <>
-                      <svg className="animate-spin h-5 w-5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                      </svg>
-                      <span>Executando...</span>
-                    </>
-                  ) : loading ? (
-                    <>
-                      <svg className="animate-spin h-5 w-5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                      </svg>
-                      <span>Carregando Pyodide...</span>
-                    </>
-                  ) : (
-                    <>
-                      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z" />
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                      </svg>
-                      <span>Executar Código</span>
-                    </>
-                  )}
-                </button>
-
-                {isExecuting && (
-                  <button
-                    onClick={stopExecution}
-                    className="px-6 py-3 bg-red-600 hover:bg-red-700 text-white font-semibold rounded-lg shadow-lg hover:shadow-xl transform hover:scale-105 transition-all duration-200 flex items-center gap-2"
-                    title="Parar execução"
-                    aria-label="Parar execução do código"
-                  >
-                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 10h6v4H9z" />
+            <div className="flex justify-center items-center gap-3">
+              <button
+                onClick={executeCode}
+                disabled={loading || isExecuting || !pyodide}
+                className="px-8 py-3 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-400 disabled:cursor-not-allowed text-white font-semibold rounded-lg shadow-lg hover:shadow-xl transform hover:scale-105 transition-all duration-200 flex items-center gap-2"
+              >
+                {isExecuting ? (
+                  <>
+                    <svg className="animate-spin h-5 w-5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
                     </svg>
-                    <span>Parar</span>
-                  </button>
+                    <span>Executando...</span>
+                  </>
+                ) : loading ? (
+                  <>
+                    <svg className="animate-spin h-5 w-5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                    </svg>
+                    <span>Carregando Pyodide...</span>
+                  </>
+                ) : (
+                  <>
+                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z" />
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                    </svg>
+                    <span>Executar Código</span>
+                  </>
                 )}
-              </div>
+              </button>
+
+              {isExecuting && (
+                <button
+                  onClick={stopExecution}
+                  className="px-6 py-3 bg-red-600 hover:bg-red-700 text-white font-semibold rounded-lg shadow-lg hover:shadow-xl transform hover:scale-105 transition-all duration-200 flex items-center gap-2"
+                  title="Parar execução"
+                  aria-label="Parar execução do código"
+                >
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 10h6v4H9z" />
+                  </svg>
+                  <span>Parar</span>
+                </button>
+              )}
+            </div>
             )}
 
             {/* Layout dinâmico baseado na escolha do usuário com painéis redimensionáveis */}
@@ -1875,34 +1761,34 @@ builtins.input = input
                     )}
                     <Panel defaultSize={50} minSize={20} className="flex flex-col">
                       <div className="h-full bg-white dark:bg-gray-900 rounded-lg shadow-lg border border-gray-200 dark:border-gray-800 overflow-hidden flex flex-col">
-                        <EditorTabs
-                          tabs={tabs}
-                          activeTabId={activeTabId}
-                          onTabClick={setActiveTabId}
-                          onTabClose={closeTab}
-                          onNewTab={createNewTab}
-                          onImport={importCode}
-                          onExportCurrent={exportCurrentTab}
-                          onExportAll={exportAllTabs}
+                  <EditorTabs
+                    tabs={tabs}
+                    activeTabId={activeTabId}
+                    onTabClick={setActiveTabId}
+                    onTabClose={closeTab}
+                    onNewTab={createNewTab}
+                    onImport={importCode}
+                    onExportCurrent={exportCurrentTab}
+                    onExportAll={exportAllTabs}
                           onShare={shareCode}
-                          fontSize={fontSize}
-                          onFontSizeChange={handleFontSizeChange}
-                        />
+                    fontSize={fontSize}
+                    onFontSizeChange={handleFontSizeChange}
+                  />
                         <div className="flex-1 h-full">
-                          <PythonEditor
-                            code={activeTab.code}
-                            onChange={(newCode) => {
-                              updateTabCode(activeTabId, newCode)
+                    <PythonEditor
+                      code={activeTab.code}
+                      onChange={(newCode) => {
+                        updateTabCode(activeTabId, newCode)
                               setErrorLine(null)
-                            }}
-                            disabled={loading || isExecuting}
-                            fileName={activeTab.name}
-                            errorLine={errorLine}
-                            onRun={executeCode}
-                            fontSize={fontSize}
-                          />
-                        </div>
-                      </div>
+                      }}
+                      disabled={loading || isExecuting}
+                      fileName={activeTab.name}
+                      errorLine={errorLine}
+                      onRun={executeCode}
+                      fontSize={fontSize}
+                    />
+                  </div>
+                </div>
                     </Panel>
                     {(layout === 'bottom' || layout === 'right') && (
                       <>
@@ -1914,29 +1800,29 @@ builtins.input = input
                         <Panel defaultSize={50} minSize={20} className="flex flex-col">
                           <div className="h-full bg-white dark:bg-gray-900 rounded-lg shadow-lg border border-gray-200 dark:border-gray-800 overflow-hidden flex flex-col">
                             <div className="h-[300px] sm:h-[400px] lg:h-full">
-                              <OutputTerminal
-                                output={activeTab.output}
-                                isError={activeTab.hasError}
-                                isLoading={loading}
-                                isWaitingInput={isWaitingInput}
-                                inputPrompt={inputPrompt}
-                                onInputSubmit={(value) => {
-                                  const promptText = inputPrompt || ''
-                                  const inputLine = promptText + value + '\n'
-                                  const currentOutput = activeTab.output
-                                  const newOutput = currentOutput + inputLine
-                                  updateTabOutput(activeTabId, newOutput, false)
-                                  outputBufferRef.current.push(inputLine)
-                                  setIsWaitingInput(false)
-                                  setInputPrompt('')
-                                  if (inputResolveRef.current) {
-                                    inputResolveRef.current(value)
-                                    inputResolveRef.current = null
-                                  }
-                                }}
-                              />
-                            </div>
-                          </div>
+                    <OutputTerminal
+                      output={activeTab.output}
+                      isError={activeTab.hasError}
+                      isLoading={loading}
+                      isWaitingInput={isWaitingInput}
+                      inputPrompt={inputPrompt}
+                      onInputSubmit={(value) => {
+                        const promptText = inputPrompt || ''
+                        const inputLine = promptText + value + '\n'
+                        const currentOutput = activeTab.output
+                        const newOutput = currentOutput + inputLine
+                        updateTabOutput(activeTabId, newOutput, false)
+                        outputBufferRef.current.push(inputLine)
+                        setIsWaitingInput(false)
+                        setInputPrompt('')
+                        if (inputResolveRef.current) {
+                          inputResolveRef.current(value)
+                          inputResolveRef.current = null
+                        }
+                      }}
+                    />
+                  </div>
+                </div>
                         </Panel>
                       </>
                     )}
@@ -1950,79 +1836,79 @@ builtins.input = input
 
       {/* Footer */}
       {!isZenMode && (
-        <footer className="mt-12 py-6 border-t border-gray-200 dark:border-gray-800">
-          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-            <div className="flex flex-col md:flex-row items-center justify-between gap-4 text-sm text-gray-600 dark:text-gray-400">
-              {/* Informações do desenvolvedor */}
-              <div className="flex flex-col md:flex-row items-center gap-2 md:gap-4">
-                <p>
-                  © {new Date().getFullYear()} Desenvolvido por{' '}
-                  <a
-                    href="https://luistls.vercel.app/"
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="text-blue-600 dark:text-blue-400 hover:underline font-medium"
-                  >
-                    Luis Teixeira
-                  </a>
-                </p>
-                <span className="hidden md:inline">•</span>
-                <div className="flex items-center gap-3">
-                  <a
-                    href="https://github.com/LuisT-ls/interpreta-python"
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-100 transition-colors"
-                    title="Ver no GitHub"
-                    aria-label="GitHub do projeto"
-                  >
-                    <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
-                      <path
-                        fillRule="evenodd"
-                        d="M12 2C6.477 2 2 6.484 2 12.017c0 4.425 2.865 8.18 6.839 9.504.5.092.682-.217.682-.483 0-.237-.008-.868-.013-1.703-2.782.605-3.369-1.343-3.369-1.343-.454-1.158-1.11-1.466-1.11-1.466-.908-.62.069-.608.069-.608 1.003.07 1.531 1.032 1.531 1.032.892 1.53 2.341 1.088 2.91.832.092-.647.35-1.088.636-1.338-2.22-.253-4.555-1.113-4.555-4.951 0-1.093.39-1.988 1.029-2.688-.103-.253-.446-1.272.098-2.65 0 0 .84-.27 2.75 1.026A9.564 9.564 0 0112 6.844c.85.004 1.705.115 2.504.337 1.909-1.296 2.747-1.027 2.747-1.027.546 1.379.202 2.398.1 2.651.64.7 1.028 1.595 1.028 2.688 0 3.848-2.339 4.695-4.566 4.943.359.309.678.92.678 1.855 0 1.338-.012 2.419-.012 2.747 0 .268.18.58.688.482A10.019 10.019 0 0022 12.017C22 6.484 17.522 2 12 2z"
-                        clipRule="evenodd"
-                      />
-                    </svg>
-                  </a>
-                  <a
-                    href="https://www.linkedin.com/in/luis-tei"
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="text-gray-600 dark:text-gray-400 hover:text-blue-600 dark:hover:text-blue-400 transition-colors"
-                    title="Ver no LinkedIn"
-                    aria-label="LinkedIn do desenvolvedor"
-                  >
-                    <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
-                      <path d="M20.447 20.452h-3.554v-5.569c0-1.328-.027-3.037-1.852-3.037-1.853 0-2.136 1.445-2.136 2.939v5.667H9.351V9h3.414v1.561h.046c.477-.9 1.637-1.85 3.37-1.85 3.601 0 4.267 2.37 4.267 5.455v6.286zM5.337 7.433c-1.144 0-2.063-.926-2.063-2.065 0-1.138.92-2.063 2.063-2.063 1.14 0 2.064.925 2.064 2.063 0 1.139-.925 2.065-2.064 2.065zm1.782 13.019H3.555V9h3.564v11.452zM22.225 0H1.771C.792 0 0 .774 0 1.729v20.542C0 23.227.792 24 1.771 24h20.451C23.2 24 24 23.227 24 22.271V1.729C24 .774 23.2 0 22.222 0h.003z" />
-                    </svg>
-                  </a>
-                </div>
-              </div>
-
-              {/* Powered by */}
-              <div className="flex items-center gap-2">
-                <span>Powered by</span>
+      <footer className="mt-12 py-6 border-t border-gray-200 dark:border-gray-800">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+          <div className="flex flex-col md:flex-row items-center justify-between gap-4 text-sm text-gray-600 dark:text-gray-400">
+            {/* Informações do desenvolvedor */}
+            <div className="flex flex-col md:flex-row items-center gap-2 md:gap-4">
+              <p>
+                © {new Date().getFullYear()} Desenvolvido por{' '}
                 <a
-                  href="https://pyodide.org"
+                  href="https://luistls.vercel.app/"
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="text-blue-600 dark:text-blue-400 hover:underline"
+                  className="text-blue-600 dark:text-blue-400 hover:underline font-medium"
                 >
-                  Pyodide
+                  Luis Teixeira
                 </a>
-                <span>e</span>
+              </p>
+              <span className="hidden md:inline">•</span>
+              <div className="flex items-center gap-3">
                 <a
-                  href="https://nextjs.org"
+                  href="https://github.com/LuisT-ls/interpreta-python"
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="text-blue-600 dark:text-blue-400 hover:underline"
+                  className="text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-100 transition-colors"
+                  title="Ver no GitHub"
+                  aria-label="GitHub do projeto"
                 >
-                  Next.js
+                  <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
+                    <path
+                      fillRule="evenodd"
+                      d="M12 2C6.477 2 2 6.484 2 12.017c0 4.425 2.865 8.18 6.839 9.504.5.092.682-.217.682-.483 0-.237-.008-.868-.013-1.703-2.782.605-3.369-1.343-3.369-1.343-.454-1.158-1.11-1.466-1.11-1.466-.908-.62.069-.608.069-.608 1.003.07 1.531 1.032 1.531 1.032.892 1.53 2.341 1.088 2.91.832.092-.647.35-1.088.636-1.338-2.22-.253-4.555-1.113-4.555-4.951 0-1.093.39-1.988 1.029-2.688-.103-.253-.446-1.272.098-2.65 0 0 .84-.27 2.75 1.026A9.564 9.564 0 0112 6.844c.85.004 1.705.115 2.504.337 1.909-1.296 2.747-1.027 2.747-1.027.546 1.379.202 2.398.1 2.651.64.7 1.028 1.595 1.028 2.688 0 3.848-2.339 4.695-4.566 4.943.359.309.678.92.678 1.855 0 1.338-.012 2.419-.012 2.747 0 .268.18.58.688.482A10.019 10.019 0 0022 12.017C22 6.484 17.522 2 12 2z"
+                      clipRule="evenodd"
+                    />
+                  </svg>
+                </a>
+                <a
+                  href="https://www.linkedin.com/in/luis-tei"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-gray-600 dark:text-gray-400 hover:text-blue-600 dark:hover:text-blue-400 transition-colors"
+                  title="Ver no LinkedIn"
+                  aria-label="LinkedIn do desenvolvedor"
+                >
+                  <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
+                    <path d="M20.447 20.452h-3.554v-5.569c0-1.328-.027-3.037-1.852-3.037-1.853 0-2.136 1.445-2.136 2.939v5.667H9.351V9h3.414v1.561h.046c.477-.9 1.637-1.85 3.37-1.85 3.601 0 4.267 2.37 4.267 5.455v6.286zM5.337 7.433c-1.144 0-2.063-.926-2.063-2.065 0-1.138.92-2.063 2.063-2.063 1.14 0 2.064.925 2.064 2.063 0 1.139-.925 2.065-2.064 2.065zm1.782 13.019H3.555V9h3.564v11.452zM22.225 0H1.771C.792 0 0 .774 0 1.729v20.542C0 23.227.792 24 1.771 24h20.451C23.2 24 24 23.227 24 22.271V1.729C24 .774 23.2 0 22.222 0h.003z" />
+                  </svg>
                 </a>
               </div>
             </div>
+
+            {/* Powered by */}
+            <div className="flex items-center gap-2">
+              <span>Powered by</span>
+              <a
+                href="https://pyodide.org"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-blue-600 dark:text-blue-400 hover:underline"
+              >
+                Pyodide
+              </a>
+              <span>e</span>
+              <a
+                href="https://nextjs.org"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-blue-600 dark:text-blue-400 hover:underline"
+              >
+                Next.js
+              </a>
+            </div>
           </div>
-        </footer>
+        </div>
+      </footer>
       )}
 
       {/* Input oculto para importar arquivos */}
