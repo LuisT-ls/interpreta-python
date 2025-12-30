@@ -692,7 +692,7 @@ export default function Home() {
                       <>
                         <Panel defaultSize={50} minSize={20} className="flex flex-col">
                           <div className="h-full bg-white dark:bg-gray-900 rounded-lg shadow-lg border border-gray-200 dark:border-gray-800 overflow-hidden flex flex-col">
-                            <div className="h-[300px] sm:h-[400px] lg:h-full">
+                            <div className="flex-1 min-h-0 flex flex-col">
                               <OutputTerminal
                                 output={activeTab.output}
                                 isError={activeTab.hasError}
@@ -714,34 +714,34 @@ export default function Home() {
                     )}
                     <Panel defaultSize={50} minSize={20} className="flex flex-col">
                       <div className="h-full bg-white dark:bg-gray-900 rounded-lg shadow-lg border border-gray-200 dark:border-gray-800 overflow-hidden flex flex-col">
-                  <EditorTabs
-                    tabs={tabs}
-                    activeTabId={activeTabId}
-                    onTabClick={setActiveTabId}
-                    onTabClose={closeTab}
-                    onNewTab={createNewTab}
-                    onImport={importCode}
-                    onExportCurrent={exportCurrentTab}
-                    onExportAll={exportAllTabs}
+                        <EditorTabs
+                          tabs={tabs}
+                          activeTabId={activeTabId}
+                          onTabClick={setActiveTabId}
+                          onTabClose={closeTab}
+                          onNewTab={createNewTab}
+                          onImport={importCode}
+                          onExportCurrent={exportCurrentTab}
+                          onExportAll={exportAllTabs}
                           onShare={shareCode}
-                    fontSize={fontSize}
-                    onFontSizeChange={handleFontSizeChange}
-                  />
-                        <div className="flex-1 h-full">
-                    <PythonEditor
-                      code={activeTab.code}
-                      onChange={(newCode) => {
-                        updateTabCode(activeTabId, newCode)
+                          fontSize={fontSize}
+                          onFontSizeChange={handleFontSizeChange}
+                        />
+                        <div className="flex-1 min-h-0 overflow-hidden">
+                          <PythonEditor
+                            code={activeTab.code}
+                            onChange={(newCode) => {
+                              updateTabCode(activeTabId, newCode)
                               setErrorLine(null)
-                      }}
-                      disabled={loading || isExecuting}
-                      fileName={activeTab.name}
-                      errorLine={errorLine}
-                      onRun={executeCode}
-                      fontSize={fontSize}
-                    />
-                  </div>
-                </div>
+                            }}
+                            disabled={loading || isExecuting}
+                            fileName={activeTab.name}
+                            errorLine={errorLine}
+                            onRun={executeCode}
+                            fontSize={fontSize}
+                          />
+                        </div>
+                      </div>
                     </Panel>
                     {(layout === 'bottom' || layout === 'right') && (
                       <>
@@ -752,18 +752,18 @@ export default function Home() {
                         </Separator>
                         <Panel defaultSize={50} minSize={20} className="flex flex-col">
                           <div className="h-full bg-white dark:bg-gray-900 rounded-lg shadow-lg border border-gray-200 dark:border-gray-800 overflow-hidden flex flex-col">
-                            <div className="h-[300px] sm:h-[400px] lg:h-full">
-                    <OutputTerminal
-                      output={activeTab.output}
-                      isError={activeTab.hasError}
-                      isLoading={loading}
-                      isWaitingInput={isWaitingInput}
-                      inputPrompt={inputPrompt}
-                      onInputSubmit={onInputSubmit}
-                      plots={activeTab.plots}
-                    />
-                  </div>
-                </div>
+                            <div className="flex-1 min-h-0 flex flex-col">
+                              <OutputTerminal
+                                output={activeTab.output}
+                                isError={activeTab.hasError}
+                                isLoading={loading}
+                                isWaitingInput={isWaitingInput}
+                                inputPrompt={inputPrompt}
+                                onInputSubmit={onInputSubmit}
+                                plots={activeTab.plots}
+                              />
+                            </div>
+                          </div>
                         </Panel>
                       </>
                     )}
