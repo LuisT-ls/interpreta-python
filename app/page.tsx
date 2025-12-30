@@ -1612,28 +1612,71 @@ builtins.input = input
       )}
       {/* Header */}
       {(!isZenMode || !isZenMounted) && (
-        <header className="sticky top-0 z-10 bg-white/80 dark:bg-gray-900/80 backdrop-blur-sm border-b border-gray-200 dark:border-gray-800">
+        <header className="sticky top-0 z-10 bg-white/95 dark:bg-gray-900/95 backdrop-blur-md border-b border-gray-200/50 dark:border-gray-800/50 shadow-sm">
           <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
             <div className="flex items-center justify-between h-16">
-              <div className="flex items-center gap-3">
-                {/* Logo */}
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img
-                  src="/logo.png"
-                  alt="Interpretador Python Web - Execute código Python no navegador"
-                  className="h-8 w-auto object-contain"
-                  width={32}
-                  height={32}
-                />
-                <h1 className="text-xl font-bold text-gray-900 dark:text-gray-100">
-                  Interpretador Python Web
-                </h1>
+              {/* Logo e Título */}
+              <div className="flex items-center gap-2 sm:gap-3 group min-w-0">
+                <div className="relative flex-shrink-0">
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    src="/logo.png"
+                    alt="Interpretador Python Web - Execute código Python no navegador"
+                    className="h-8 sm:h-9 w-auto object-contain transition-transform duration-300 group-hover:scale-110"
+                    width={36}
+                    height={36}
+                  />
+                  <div className="absolute inset-0 bg-blue-500/20 rounded-lg blur-xl opacity-0 group-hover:opacity-100 transition-opacity duration-300 -z-10" />
+                </div>
+                <div className="flex flex-col min-w-0">
+                  <h1 className="text-base sm:text-lg font-bold text-gray-900 dark:text-gray-100 leading-tight truncate">
+                    Interpretador Python Web
+                  </h1>
+                  <span className="text-xs text-gray-500 dark:text-gray-400 hidden lg:inline">
+                    Execute código Python no navegador
+                  </span>
+                </div>
               </div>
-              <div className="flex items-center gap-3">
-                {isMounted && <LayoutSelector currentLayout={layout} onLayoutChange={changeLayout} />}
+
+              {/* Controles */}
+              <div className="flex items-center gap-1.5 sm:gap-2 flex-shrink-0">
+                {/* Grupo: Layout e Modo Zen */}
+                <div className="hidden sm:flex items-center gap-1.5 sm:gap-2 px-1.5 sm:px-2 py-1 rounded-lg bg-gray-50/50 dark:bg-gray-800/50 border border-gray-200/50 dark:border-gray-700/50">
+                  {isMounted && <LayoutSelector currentLayout={layout} onLayoutChange={changeLayout} />}
+                  <div className="w-px h-5 sm:h-6 bg-gray-300 dark:bg-gray-700" />
+                  <button
+                    onClick={toggleZenMode}
+                    className={`relative p-1.5 sm:p-2 text-gray-600 dark:text-gray-400 rounded-md transition-all duration-200 ${
+                      isZenMode
+                        ? 'bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400'
+                        : 'hover:bg-gray-100 dark:hover:bg-gray-700 hover:text-gray-900 dark:hover:text-gray-200'
+                    }`}
+                    title={isZenMode ? 'Sair do Modo Zen (Foco)' : 'Modo Zen - Focar apenas no editor'}
+                    aria-label={isZenMode ? 'Sair do Modo Zen' : 'Modo Zen'}
+                  >
+                    {isZenMode ? (
+                      <svg className="h-4 w-4 sm:h-5 sm:w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                      </svg>
+                    ) : (
+                      <svg className="h-4 w-4 sm:h-5 sm:w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4" />
+                      </svg>
+                    )}
+                    {isZenMode && (
+                      <span className="absolute -top-0.5 -right-0.5 h-1.5 w-1.5 sm:h-2 sm:w-2 bg-blue-500 rounded-full animate-pulse" />
+                    )}
+                  </button>
+                </div>
+
+                {/* Modo Zen isolado em mobile */}
                 <button
                   onClick={toggleZenMode}
-                  className="p-2 text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 transition-colors rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800"
+                  className={`sm:hidden relative p-2 text-gray-600 dark:text-gray-400 rounded-lg transition-all duration-200 ${
+                    isZenMode
+                      ? 'bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400'
+                      : 'hover:bg-gray-100 dark:hover:bg-gray-800'
+                  }`}
                   title={isZenMode ? 'Sair do Modo Zen' : 'Modo Zen'}
                   aria-label={isZenMode ? 'Sair do Modo Zen' : 'Modo Zen'}
                 >
@@ -1647,17 +1690,27 @@ builtins.input = input
                     </svg>
                   )}
                 </button>
-                <button
-                  onClick={() => setIsAboutModalOpen(true)}
-                  className="p-2 text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 transition-colors rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800"
-                  title="Sobre"
-                  aria-label="Sobre"
-                >
-                  <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                  </svg>
-                </button>
-                <ThemeToggle />
+
+                {/* Separador */}
+                <div className="hidden sm:block w-px h-8 bg-gray-200 dark:bg-gray-700 mx-0.5" />
+
+                {/* Grupo: Informações e Tema */}
+                <div className="flex items-center gap-0.5 sm:gap-1">
+                  <button
+                    onClick={() => setIsAboutModalOpen(true)}
+                    className="relative p-2 sm:p-2.5 text-gray-600 dark:text-gray-400 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800 hover:text-gray-900 dark:hover:text-gray-200 transition-all duration-200 group"
+                    title="Sobre o Interpretador Python Web (F1)"
+                    aria-label="Sobre"
+                  >
+                    <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                    </svg>
+                    <span className="absolute -bottom-1 left-1/2 -translate-x-1/2 text-[10px] text-gray-400 dark:text-gray-600 opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap hidden sm:block">
+                      F1
+                    </span>
+                  </button>
+                  <ThemeToggle />
+                </div>
               </div>
             </div>
           </div>
