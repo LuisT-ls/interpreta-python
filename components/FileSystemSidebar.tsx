@@ -302,43 +302,75 @@ export function FileSystemSidebar({
         )}
       </div>
 
-      {/* Create file/directory input */}
+      {/* Create file/directory modal */}
       {isCreating && (
-        <div className="p-2 border-t border-gray-200 dark:border-gray-800 bg-gray-50/50 dark:bg-gray-900/50">
-          <div className="flex items-center gap-1 min-w-0">
-            <input
-              type="text"
-              value={newName}
-              onChange={(e) => setNewName(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter') handleCreate()
-                if (e.key === 'Escape') {
+        <div 
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm"
+          onClick={() => {
+            setIsCreating(null)
+            setNewName('')
+          }}
+        >
+          <div 
+            className="bg-white dark:bg-gray-800 rounded-lg shadow-xl border border-gray-200 dark:border-gray-700 p-4 w-full max-w-md mx-4"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between mb-3">
+              <h3 className="text-sm font-semibold text-gray-900 dark:text-gray-100">
+                {isCreating === 'file' ? 'Novo Arquivo' : 'Nova Pasta'}
+              </h3>
+              <button
+                onClick={() => {
                   setIsCreating(null)
                   setNewName('')
-                }
-              }}
-              placeholder={isCreating === 'file' ? 'nome_arquivo.txt' : 'nome_pasta'}
-              className="flex-1 min-w-0 px-2 py-1 text-xs bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-1 focus:ring-blue-500 dark:focus:ring-blue-400"
-              autoFocus
-            />
-            <button
-              onClick={handleCreate}
-              className="flex-shrink-0 px-2 py-1 text-xs bg-blue-600 text-white rounded hover:bg-blue-700 transition-colors font-medium whitespace-nowrap"
-            >
-              Criar
-            </button>
-            <button
-              onClick={() => {
-                setIsCreating(null)
-                setNewName('')
-              }}
-              className="flex-shrink-0 p-1 text-xs text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-800 rounded transition-colors"
-              title="Cancelar"
-            >
-              <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-              </svg>
-            </button>
+                }}
+                className="p-1 text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 rounded transition-colors"
+                title="Fechar"
+              >
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+            <div className="space-y-3">
+              <div>
+                <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1.5">
+                  Nome
+                </label>
+                <input
+                  type="text"
+                  value={newName}
+                  onChange={(e) => setNewName(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') handleCreate()
+                    if (e.key === 'Escape') {
+                      setIsCreating(null)
+                      setNewName('')
+                    }
+                  }}
+                  placeholder={isCreating === 'file' ? 'nome_arquivo.txt' : 'nome_pasta'}
+                  className="w-full px-3 py-2 text-sm bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-600 rounded-md text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400 focus:border-transparent"
+                  autoFocus
+                />
+              </div>
+              <div className="flex items-center justify-end gap-2">
+                <button
+                  onClick={() => {
+                    setIsCreating(null)
+                    setNewName('')
+                  }}
+                  className="px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 bg-gray-100 dark:bg-gray-700 rounded-md hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors"
+                >
+                  Cancelar
+                </button>
+                <button
+                  onClick={handleCreate}
+                  className="px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-md hover:bg-blue-700 transition-colors"
+                >
+                  Criar
+                </button>
+              </div>
+            </div>
           </div>
         </div>
       )}

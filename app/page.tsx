@@ -376,13 +376,6 @@ export default function Home() {
         onClose={() => setIsCommandPaletteOpen(false)}
         commands={commands}
       />
-      <FileSystemSidebar
-        pyodide={pyodide}
-        loading={loading}
-        isOpen={isFileSystemOpen}
-        onToggle={() => setIsFileSystemOpen(!isFileSystemOpen)}
-        onFileSelect={(path) => setEditingFilePath(path)}
-      />
       <FileEditor
         pyodide={pyodide}
         loading={loading}
