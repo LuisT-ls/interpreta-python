@@ -52,6 +52,36 @@ Uma aplicação web moderna e completa que permite executar código Python diret
 - ✅ **Terminal estilizado** - Visual de terminal com fundo preto e texto verde
 - ✅ **Responsivo** - Funciona perfeitamente em desktop, tablet e mobile
 
+### 📊 Visualização de Dados
+- ✅ **Suporte a Matplotlib** - Renderize gráficos do matplotlib diretamente na interface
+- ✅ **Captura automática de plots** - Gráficos gerados com `plt.show()` são exibidos automaticamente no terminal
+- ✅ **Múltiplos gráficos por execução** - Suporte a múltiplos plots na mesma execução
+- ✅ **Renderização em canvas** - Gráficos renderizados com alta qualidade em HTML5 Canvas
+
+### 📁 Sistema de Arquivos Virtual
+- ✅ **FileSystem completo** - Sistema de arquivos virtual usando Emscripten FS do Pyodide
+- ✅ **Criar arquivos e pastas** - Interface gráfica para criar arquivos e diretórios
+- ✅ **Navegação por diretórios** - Navegue pela estrutura de arquivos com breadcrumbs
+- ✅ **Editar arquivos** - Editor modal para editar conteúdo de arquivos
+- ✅ **Deletar arquivos e pastas** - Remova arquivos e diretórios com confirmação
+- ✅ **Integração com Python** - Use `open()` para ler/escrever arquivos criados na interface
+- ✅ **Sidebar retrátil** - Painel lateral que pode ser aberto/fechado
+- ✅ **Botão flutuante de acesso rápido** - Acesso rápido ao sistema de arquivos via botão flutuante
+
+### 📦 Gerenciador de Pacotes
+- ✅ **Interface gráfica para Pip** - Instale pacotes Python diretamente pela interface
+- ✅ **Busca de pacotes** - Busque pacotes populares do PyPI
+- ✅ **Categorias de pacotes** - Pacotes organizados por categoria (Data Science, Web, Utils, etc.)
+- ✅ **Lista de pacotes instalados** - Visualize todos os pacotes já instalados
+- ✅ **Instalação com feedback visual** - Status de instalação em tempo real
+- ✅ **Desinstalação de pacotes** - Remova pacotes não mais necessários
+- ✅ **Botão flutuante de acesso rápido** - Acesso rápido ao gerenciador via botão flutuante
+
+### ⌨️ Produtividade
+- ✅ **Command Palette** - Acesse todas as funcionalidades via atalho de teclado (Ctrl+K / Cmd+K)
+- ✅ **Zen Mode** - Modo foco que esconde elementos da interface para máxima concentração
+- ✅ **Atalhos de teclado** - Navegação rápida por comandos e ações
+
 ### ⚡ Performance e UX
 - ✅ **Carregamento assíncrono** - Pyodide carrega em background com feedback visual
 - ✅ **Saída em tempo real** - Os `print()` aparecem imediatamente durante a execução usando handlers batched
@@ -59,6 +89,11 @@ Uma aplicação web moderna e completa que permite executar código Python diret
 - ✅ **Auto-scroll** - Terminal rola automaticamente para mostrar a saída mais recente
 - ✅ **Animações suaves** - Transições e efeitos visuais modernos
 - ✅ **Debounce inteligente** - Validação de sintaxe usa debounce de 800ms para evitar processamento excessivo
+
+### 🧪 Qualidade e Testes
+- ✅ **Testes unitários** - Cobertura de testes para lógica crítica (parser de erros)
+- ✅ **Jest configurado** - Ambiente de testes completo com Jest e Testing Library
+- ✅ **Cobertura de código** - Relatórios de cobertura disponíveis
 
 ---
 
@@ -72,6 +107,10 @@ Este projeto utiliza as seguintes tecnologias:
 - **[Tailwind CSS](https://tailwindcss.com/)** - Framework CSS utility-first
 - **[Pyodide 0.26.1](https://pyodide.org/)** - Python para WebAssembly
 - **[JSZip](https://stuk.github.io/jszip/)** - Biblioteca para criar arquivos ZIP no navegador
+- **[CodeMirror](https://codemirror.net/)** - Editor de código com syntax highlighting avançado
+- **[React Resizable Panels](https://github.com/bvaughn/react-resizable-panels)** - Painéis redimensionáveis para layout flexível
+- **[Jest](https://jestjs.io/)** - Framework de testes JavaScript
+- **[Testing Library](https://testing-library.com/)** - Utilitários para testes de componentes React
 - **Editor customizado** - Editor de código Python com syntax highlighting e validação em tempo real implementado do zero
 
 ---
@@ -159,6 +198,93 @@ print(f"Olá, {nome}!")
 2. Pressione Enter para enviar
 3. O código continuará a execução com o valor fornecido
 
+### Trabalhando com Sistema de Arquivos Virtual
+
+O sistema de arquivos virtual permite criar, editar e gerenciar arquivos que podem ser acessados pelo Python:
+
+1. **Abrir o Sistema de Arquivos** - Clique no botão flutuante de pasta no lado esquerdo da tela
+2. **Criar arquivo/pasta** - Use o botão "+" na toolbar
+3. **Navegar** - Clique em pastas para navegar, use breadcrumbs para voltar
+4. **Editar arquivo** - Clique em um arquivo para abrir o editor
+5. **Usar no Python** - Acesse arquivos criados usando `open()`:
+
+```python
+# Criar e escrever em arquivo
+with open('dados.txt', 'w') as f:
+    f.write('Olá, mundo!')
+
+# Ler arquivo
+with open('dados.txt', 'r') as f:
+    conteudo = f.read()
+    print(conteudo)
+```
+
+### Instalando Pacotes Python
+
+Use o Gerenciador de Pacotes para instalar bibliotecas Python suportadas pelo Pyodide:
+
+1. **Abrir o Gerenciador** - Clique no botão flutuante de cubo 3D abaixo do botão de arquivos, ou use o Command Palette (Ctrl+K)
+2. **Buscar pacote** - Digite o nome do pacote na barra de busca
+3. **Filtrar por categoria** - Use os filtros para encontrar pacotes por categoria
+4. **Instalar** - Clique em "Instalar" ao lado do pacote desejado
+5. **Usar no código** - Após instalação, importe normalmente:
+
+```python
+import pandas as pd
+import numpy as np
+
+# Agora você pode usar pandas e numpy!
+```
+
+### Criando Gráficos com Matplotlib
+
+Gráficos do matplotlib são renderizados automaticamente na interface:
+
+```python
+import matplotlib.pyplot as plt
+import numpy as np
+
+# Criar dados
+x = np.linspace(0, 10, 100)
+y = np.sin(x)
+
+# Criar gráfico
+plt.figure(figsize=(10, 6))
+plt.plot(x, y)
+plt.title('Gráfico de Seno')
+plt.xlabel('X')
+plt.ylabel('Y')
+plt.grid(True)
+
+# Exibir (será renderizado automaticamente)
+plt.show()
+```
+
+### Usando o Command Palette
+
+Acesse rapidamente todas as funcionalidades via Command Palette:
+
+1. **Abrir** - Pressione `Ctrl+K` (Windows/Linux) ou `Cmd+K` (Mac)
+2. **Navegar** - Use as setas ou digite para filtrar comandos
+3. **Executar** - Pressione Enter para executar o comando selecionado
+
+Comandos disponíveis:
+- Executar código
+- Parar execução
+- Toggle Zen Mode
+- Abrir/Fechar Sistema de Arquivos
+- Abrir Gerenciador de Pacotes
+- Alternar tema
+- E mais...
+
+### Modo Zen
+
+O Modo Zen remove elementos da interface para focar apenas no código:
+
+1. **Ativar** - Use o Command Palette (Ctrl+K) e selecione "Zen Mode"
+2. **Focar** - A interface ficará minimalista, mostrando apenas o essencial
+3. **Desativar** - Clique no botão "Sair do Modo Zen" que aparece no topo
+
 ---
 
 ## 📚 Exemplos de Código
@@ -213,6 +339,69 @@ resultado = calcular_fatorial(numero)
 print(f"O fatorial de {numero} é {resultado}")
 ```
 
+### Exemplo com Matplotlib
+```python
+import matplotlib.pyplot as plt
+import numpy as np
+
+# Criar dados
+x = np.linspace(0, 2 * np.pi, 100)
+y1 = np.sin(x)
+y2 = np.cos(x)
+
+# Criar gráfico
+plt.figure(figsize=(10, 6))
+plt.plot(x, y1, label='Seno', linewidth=2)
+plt.plot(x, y2, label='Cosseno', linewidth=2)
+plt.title('Gráfico de Funções Trigonométricas')
+plt.xlabel('X (radianos)')
+plt.ylabel('Y')
+plt.legend()
+plt.grid(True, alpha=0.3)
+
+# Exibir (será renderizado automaticamente)
+plt.show()
+```
+
+### Exemplo com Sistema de Arquivos
+```python
+# Criar arquivo de dados
+dados = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
+
+with open('numeros.txt', 'w') as f:
+    for numero in dados:
+        f.write(f"{numero}\n")
+
+# Ler e processar
+with open('numeros.txt', 'r') as f:
+    linhas = f.readlines()
+    numeros = [int(linha.strip()) for linha in linhas]
+
+print(f"Números lidos: {numeros}")
+print(f"Soma: {sum(numeros)}")
+print(f"Média: {sum(numeros) / len(numeros)}")
+```
+
+### Exemplo com Pacotes Externos
+```python
+# Após instalar pandas via Gerenciador de Pacotes
+import pandas as pd
+
+# Criar DataFrame
+dados = {
+    'Nome': ['Alice', 'Bob', 'Charlie'],
+    'Idade': [25, 30, 35],
+    'Cidade': ['São Paulo', 'Rio de Janeiro', 'Belo Horizonte']
+}
+
+df = pd.DataFrame(dados)
+print(df)
+
+# Operações com pandas
+print(f"\nMédia de idades: {df['Idade'].mean()}")
+print(f"\nPessoas em São Paulo: {len(df[df['Cidade'] == 'São Paulo'])}")
+```
+
 ---
 
 ## 📁 Estrutura do Projeto
@@ -223,22 +412,48 @@ interpreta-python/
 │   ├── img/
 │   │   └── favicon/          # Favicons e ícones
 │   ├── layout.tsx            # Layout principal da aplicação (metadata, fontes)
-│   ├── page.tsx              # Página principal (orquestrador, execução de código, validação)
-│   └── globals.css            # Estilos globais
+│   ├── page.tsx              # Página principal (orquestrador, integração de componentes)
+│   ├── globals.css            # Estilos globais
+│   ├── robots.ts             # Configuração de robots.txt
+│   └── sitemap.ts            # Configuração de sitemap.xml
 ├── components/
 │   ├── PythonEditor.tsx       # Editor de código com syntax highlighting, validação e auto-complete
-│   ├── OutputTerminal.tsx    # Terminal de saída com input inline
+│   ├── OutputTerminal.tsx    # Terminal de saída com input inline e renderização de plots
+│   ├── MatplotlibPlot.tsx    # Componente para renderizar gráficos matplotlib
 │   ├── ThemeToggle.tsx       # Toggle de tema claro/escuro
 │   ├── LayoutSelector.tsx    # Seletor de layout
 │   ├── EditorTabs.tsx        # Sistema de abas do editor
-│   └── ExportMenu.tsx        # Menu de exportação
+│   ├── ExportMenu.tsx        # Menu de exportação
+│   ├── FileSystemSidebar.tsx # Sidebar do sistema de arquivos virtual
+│   ├── FileEditor.tsx        # Editor modal para arquivos do VFS
+│   ├── PackageManager.tsx    # Interface gráfica do gerenciador de pacotes
+│   ├── CommandPalette.tsx    # Palette de comandos com atalhos de teclado
+│   ├── AboutModal.tsx        # Modal com informações sobre a aplicação
+│   └── InputDialog.tsx       # Dialog para inputs do usuário
 ├── hooks/
 │   ├── usePyodide.ts         # Hook para carregar e gerenciar Pyodide
 │   ├── useLayout.ts          # Hook para gerenciar layout (com persistência no localStorage)
-│   └── useEditorTabs.ts      # Hook para gerenciar abas do editor
+│   ├── useEditorTabs.ts      # Hook para gerenciar abas do editor
+│   ├── usePythonExecution.ts # Hook para execução de código Python
+│   ├── useSyntaxValidation.ts # Hook para validação de sintaxe em tempo real
+│   ├── useFileSystem.ts      # Hook para interagir com o sistema de arquivos virtual
+│   ├── usePackageManager.ts  # Hook para gerenciar pacotes Python (micropip)
+│   ├── useMatplotlib.ts      # Hook para gerenciar plots do matplotlib
+│   └── useZenMode.ts         # Hook para gerenciar modo Zen
+├── utils/
+│   ├── parsePyodideError.ts  # Parser de erros do Pyodide com mapeamento de linhas
+│   ├── shareCode.ts          # Utilitários para compartilhamento de código
+│   └── __tests__/
+│       ├── parsePyodideError.test.ts # Testes unitários do parser de erros
+│       └── README.md          # Documentação dos testes
+├── docs/
+│   └── FILESYSTEM_ANALYSIS.md # Análise e documentação do sistema de arquivos
 ├── public/
 │   ├── logo.png              # Logo da aplicação
 │   └── favicon/              # Arquivos de favicon
+├── coverage/                 # Relatórios de cobertura de testes (gerado)
+├── jest.config.js            # Configuração do Jest
+├── jest.setup.js             # Setup do ambiente de testes
 ├── .eslintrc.json            # Configuração do ESLint
 ├── .gitignore                # Arquivos ignorados pelo Git
 ├── next.config.js            # Configuração do Next.js
@@ -303,6 +518,11 @@ npm run dev          # Inicia servidor de desenvolvimento (Turbopack)
 npm run build        # Cria build de produção
 npm start            # Inicia servidor de produção
 
+# Testes
+npm test             # Executa todos os testes
+npm run test:watch   # Executa testes em modo watch
+npm run test:coverage # Executa testes com relatório de cobertura
+
 # Qualidade de Código
 npm run lint         # Executa o ESLint
 ```
@@ -326,9 +546,11 @@ npm run lint         # Executa o ESLint
 
 - ⚠️ **Conexão com Internet** - O Pyodide é carregado via CDN (jsdelivr), então é necessária conexão com a internet
 - ⚠️ **Primeira Execução** - A primeira execução pode demorar alguns segundos enquanto o Pyodide baixa os arquivos necessários (~10-15MB)
-- ⚠️ **Bibliotecas Python** - Algumas bibliotecas Python podem não estar disponíveis no Pyodide (especialmente aquelas que dependem de código C)
+- ⚠️ **Bibliotecas Python** - Algumas bibliotecas Python podem não estar disponíveis no Pyodide (especialmente aquelas que dependem de código C). Use o Gerenciador de Pacotes para verificar pacotes disponíveis
 - ⚠️ **Performance** - Códigos muito complexos podem ser mais lentos que em Python nativo devido à execução via WebAssembly
 - ⚠️ **Validação em Tempo Real** - A validação de sintaxe usa debounce de 800ms, então pode haver um pequeno delay na detecção de erros
+- ⚠️ **Sistema de Arquivos** - O sistema de arquivos é virtual e existe apenas durante a sessão do navegador. Arquivos são perdidos ao recarregar a página
+- ⚠️ **Pacotes Instalados** - Pacotes instalados via Gerenciador de Pacotes são mantidos apenas durante a sessão atual. É necessário reinstalá-los ao recarregar a página
 
 ### Segurança
 
