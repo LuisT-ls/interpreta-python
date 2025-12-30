@@ -15,6 +15,7 @@ import { LayoutSelector } from '@/components/LayoutSelector'
 import { EditorTabs } from '@/components/EditorTabs'
 import { ExportMenu } from '@/components/ExportMenu'
 import { CommandPalette, Command } from '@/components/CommandPalette'
+import { generateShareUrl, getCodeFromUrl } from '@/utils/shareCode'
 
 /**
  * Interface para o resultado do parsing de erros do Pyodide
@@ -470,6 +471,9 @@ export default function Home() {
 
   // Estado para Command Palette
   const [isCommandPaletteOpen, setIsCommandPaletteOpen] = useState(false)
+
+  // Estado para notificação de compartilhamento
+  const [shareNotification, setShareNotification] = useState<string | null>(null)
 
   /**
    * Validação em tempo real do código Python
@@ -1417,6 +1421,49 @@ builtins.input = input
     }
   }, [activeTab.code, activeTabId, updateTabCode])
 
+  // Função para compartilhar código
+  const shareCode = useCallback(async () => {
+    try {
+      const shareUrl = generateShareUrl(activeTab.code)
+      
+      // Tentar usar Web Share API se disponível
+      if (navigator.share) {
+        try {
+          await navigator.share({
+            title: 'Código Python',
+            text: `Confira este código Python: ${activeTab.name}`,
+            url: shareUrl,
+          })
+          return
+        } catch (err) {
+          // Se o usuário cancelar, continuar com fallback
+          if ((err as Error).name !== 'AbortError') {
+            console.error('Erro ao compartilhar:', err)
+          }
+        }
+      }
+      
+      // Fallback: copiar para clipboard
+      await navigator.clipboard.writeText(shareUrl)
+      setShareNotification('URL copiada para a área de transferência!')
+      setTimeout(() => setShareNotification(null), 3000)
+    } catch (error) {
+      console.error('Erro ao compartilhar código:', error)
+      alert('Erro ao gerar URL de compartilhamento')
+    }
+  }, [activeTab.code, activeTab.name])
+
+  // Detectar código na URL ao carregar
+  useEffect(() => {
+    const codeFromUrl = getCodeFromUrl()
+    if (codeFromUrl && codeFromUrl.trim()) {
+      // Atualizar a aba atual com o código compartilhado
+      updateTabCode(activeTabId, codeFromUrl)
+      // Limpar a URL para não recarregar o código ao recarregar a página
+      window.history.replaceState({}, '', window.location.pathname)
+    }
+  }, []) // Executar apenas uma vez ao montar
+
   // Função para alternar tema
   const toggleTheme = useCallback(() => {
     const isDark = document.documentElement.classList.contains('dark')
@@ -1496,6 +1543,18 @@ builtins.input = input
         </svg>
       ),
     },
+    {
+      id: 'share',
+      label: 'Compartilhar Código',
+      description: 'Gerar URL para compartilhar o código atual',
+      keywords: ['compartilhar', 'share', 'url', 'link', 'compartilhar código'],
+      action: shareCode,
+      icon: (
+        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.368 2.684 3 3 0 00-5.368-2.684z" />
+        </svg>
+      ),
+    },
   ]
 
   // Atalhos de teclado globais
@@ -1542,6 +1601,15 @@ builtins.input = input
         onClose={() => setIsCommandPaletteOpen(false)}
         commands={commands}
       />
+      {/* Notificação de compartilhamento */}
+      {shareNotification && (
+        <div className="fixed bottom-6 right-6 z-50 bg-green-500 dark:bg-green-600 text-white px-4 py-3 rounded-lg shadow-lg flex items-center gap-3 animate-in slide-in-from-bottom-5">
+          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+          </svg>
+          <span>{shareNotification}</span>
+        </div>
+      )}
       {/* Header */}
       {(!isZenMode || !isZenMounted) && (
         <header className="sticky top-0 z-10 bg-white/80 dark:bg-gray-900/80 backdrop-blur-sm border-b border-gray-200 dark:border-gray-800">
@@ -1676,6 +1744,7 @@ builtins.input = input
                       onImport={importCode}
                       onExportCurrent={exportCurrentTab}
                       onExportAll={exportAllTabs}
+                      onShare={shareCode}
                       fontSize={fontSize}
                       onFontSizeChange={handleFontSizeChange}
                     />
@@ -1762,6 +1831,7 @@ builtins.input = input
                           onImport={importCode}
                           onExportCurrent={exportCurrentTab}
                           onExportAll={exportAllTabs}
+                          onShare={shareCode}
                           fontSize={fontSize}
                           onFontSizeChange={handleFontSizeChange}
                         />
