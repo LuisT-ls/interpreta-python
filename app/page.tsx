@@ -20,6 +20,7 @@ import { generateShareUrl, getCodeFromUrl } from '@/utils/shareCode'
 import { usePythonExecution } from '@/hooks/usePythonExecution'
 import { FileSystemSidebar } from '@/components/FileSystemSidebar'
 import { FileEditor } from '@/components/FileEditor'
+import { PackageManager } from '@/components/PackageManager'
 
 export default function Home() {
   const {
@@ -84,6 +85,9 @@ export default function Home() {
   // Estado para Sistema de Arquivos
   const [isFileSystemOpen, setIsFileSystemOpen] = useState(false)
   const [editingFilePath, setEditingFilePath] = useState<string | null>(null)
+
+  // Estado para Gerenciador de Pacotes
+  const [isPackageManagerOpen, setIsPackageManagerOpen] = useState(false)
 
   // Função para exportar apenas a aba atual como arquivo .py
   const exportCurrentTab = useCallback(() => {
@@ -334,6 +338,18 @@ export default function Home() {
         </svg>
       ),
     },
+    {
+      id: 'package-manager',
+      label: 'Gerenciador de Pacotes',
+      description: 'Instalar e gerenciar pacotes Python',
+      keywords: ['pacotes', 'packages', 'pip', 'instalar', 'install', 'gerenciador'],
+      action: () => setIsPackageManagerOpen(true),
+      icon: (
+        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4" />
+        </svg>
+      ),
+    },
   ]
 
   // Atalhos de teclado globais
@@ -385,6 +401,12 @@ export default function Home() {
         loading={loading}
         filePath={editingFilePath}
         onClose={() => setEditingFilePath(null)}
+      />
+      <PackageManager
+        pyodide={pyodide}
+        loading={loading}
+        isOpen={isPackageManagerOpen}
+        onClose={() => setIsPackageManagerOpen(false)}
       />
       {/* Notificação de compartilhamento */}
       {shareNotification && (
@@ -631,18 +653,36 @@ export default function Home() {
                         />
                       </div>
                     )}
-                    {/* Botão para abrir FileSystem quando fechado */}
+                    {/* Botões flutuantes para Sistema de Arquivos e Gerenciador de Pacotes */}
                     {!isFileSystemOpen && (
-                      <button
-                        onClick={() => setIsFileSystemOpen(true)}
-                        className="absolute left-0 top-1/2 -translate-y-1/2 z-40 bg-gray-800 dark:bg-gray-900 text-white p-2 rounded-r-lg shadow-lg hover:bg-gray-700 dark:hover:bg-gray-800 transition-all hover:scale-105"
-                        title="Abrir Sistema de Arquivos"
-                        aria-label="Abrir Sistema de Arquivos"
-                      >
-                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" />
-                        </svg>
-                      </button>
+                      <div className="absolute left-0 top-1/2 -translate-y-1/2 z-40 flex flex-col gap-2">
+                        <button
+                          onClick={() => setIsFileSystemOpen(true)}
+                          className="bg-gray-800 dark:bg-gray-900 text-white p-2 rounded-r-lg shadow-lg hover:bg-gray-700 dark:hover:bg-gray-800 transition-all hover:scale-105"
+                          title="Abrir Sistema de Arquivos"
+                          aria-label="Abrir Sistema de Arquivos"
+                        >
+                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" />
+                          </svg>
+                        </button>
+                        <button
+                          onClick={() => setIsPackageManagerOpen(true)}
+                          className="bg-gray-800 dark:bg-gray-900 text-white p-2 rounded-r-lg shadow-lg hover:bg-gray-700 dark:hover:bg-gray-800 transition-all hover:scale-105"
+                          title="Abrir Gerenciador de Pacotes"
+                          aria-label="Abrir Gerenciador de Pacotes"
+                        >
+                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={1.5}>
+                            {/* Cubo 3D wireframe */}
+                            <path d="M12 2L2 7L12 12L22 7L12 2Z" strokeLinecap="round" strokeLinejoin="round" />
+                            <path d="M2 17L12 22L22 17" strokeLinecap="round" strokeLinejoin="round" />
+                            <path d="M2 12L12 17L22 12" strokeLinecap="round" strokeLinejoin="round" />
+                            <path d="M2 7L2 17" strokeLinecap="round" strokeLinejoin="round" />
+                            <path d="M12 12L12 22" strokeLinecap="round" strokeLinejoin="round" />
+                            <path d="M22 7L22 17" strokeLinecap="round" strokeLinejoin="round" />
+                          </svg>
+                        </button>
+                      </div>
                     )}
                     <Group
                       orientation={layout === 'bottom' || layout === 'top' ? 'vertical' : 'horizontal'}
