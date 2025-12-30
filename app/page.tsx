@@ -18,6 +18,8 @@ import { ExportMenu } from '@/components/ExportMenu'
 import { CommandPalette, Command } from '@/components/CommandPalette'
 import { generateShareUrl, getCodeFromUrl } from '@/utils/shareCode'
 import { usePythonExecution } from '@/hooks/usePythonExecution'
+import { FileSystemSidebar } from '@/components/FileSystemSidebar'
+import { FileEditor } from '@/components/FileEditor'
 
 export default function Home() {
   const {
@@ -74,6 +76,10 @@ export default function Home() {
 
   // Estado para notificação de compartilhamento
   const [shareNotification, setShareNotification] = useState<string | null>(null)
+
+  // Estado para Sistema de Arquivos
+  const [isFileSystemOpen, setIsFileSystemOpen] = useState(false)
+  const [editingFilePath, setEditingFilePath] = useState<string | null>(null)
 
   // Função para exportar apenas a aba atual como arquivo .py
   const exportCurrentTab = useCallback(() => {
@@ -312,6 +318,18 @@ export default function Home() {
         </svg>
       ),
     },
+    {
+      id: 'toggle-filesystem',
+      label: isFileSystemOpen ? 'Fechar Sistema de Arquivos' : 'Abrir Sistema de Arquivos',
+      description: isFileSystemOpen ? 'Fechar a sidebar de arquivos' : 'Abrir a sidebar de arquivos virtuais',
+      keywords: ['arquivos', 'files', 'filesystem', 'sistema de arquivos', 'file system'],
+      action: () => setIsFileSystemOpen(!isFileSystemOpen),
+      icon: (
+        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" />
+        </svg>
+      ),
+    },
   ]
 
   // Atalhos de teclado globais
@@ -357,6 +375,19 @@ export default function Home() {
         isOpen={isCommandPaletteOpen}
         onClose={() => setIsCommandPaletteOpen(false)}
         commands={commands}
+      />
+      <FileSystemSidebar
+        pyodide={pyodide}
+        loading={loading}
+        isOpen={isFileSystemOpen}
+        onToggle={() => setIsFileSystemOpen(!isFileSystemOpen)}
+        onFileSelect={(path) => setEditingFilePath(path)}
+      />
+      <FileEditor
+        pyodide={pyodide}
+        loading={loading}
+        filePath={editingFilePath}
+        onClose={() => setEditingFilePath(null)}
       />
       {/* Notificação de compartilhamento */}
       {shareNotification && (
@@ -590,10 +621,23 @@ export default function Home() {
                   </div>
                 ) : (
                   // Layout normal com painéis redimensionáveis
-                  <Group
-                    orientation={layout === 'bottom' || layout === 'top' ? 'vertical' : 'horizontal'}
-                    className="h-[calc(100vh-12rem)] min-h-[600px] w-full"
-                  >
+                  <div className="flex h-[calc(100vh-12rem)] min-h-[600px] w-full">
+                    {/* FileSystem Sidebar */}
+                    {isFileSystemOpen && (
+                      <div className="flex-shrink-0">
+                        <FileSystemSidebar
+                          pyodide={pyodide}
+                          loading={loading}
+                          isOpen={true}
+                          onToggle={() => setIsFileSystemOpen(false)}
+                          onFileSelect={(path) => setEditingFilePath(path)}
+                        />
+                      </div>
+                    )}
+                    <Group
+                      orientation={layout === 'bottom' || layout === 'top' ? 'vertical' : 'horizontal'}
+                      className="flex-1"
+                    >
                     {(layout === 'top' || layout === 'left') && (
                       <>
                         <Panel defaultSize={50} minSize={20} className="flex flex-col">
@@ -672,6 +716,7 @@ export default function Home() {
                       </>
                     )}
                   </Group>
+                  </div>
                 )}
               </div>
             )}

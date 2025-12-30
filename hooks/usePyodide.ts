@@ -2,6 +2,17 @@
 
 import { useEffect, useState } from 'react'
 
+interface EmscriptenFS {
+  readdir: (path: string) => string[]
+  writeFile: (path: string, data: string | Uint8Array, options?: { encoding?: string }) => void
+  readFile: (path: string, options?: { encoding?: string }) => string | Uint8Array
+  mkdir: (path: string, mode?: number) => void
+  rmdir: (path: string) => void
+  unlink: (path: string) => void
+  stat: (path: string) => { mode: number; size: number; mtime: number }
+  rename: (oldPath: string, newPath: string) => void
+}
+
 interface Pyodide {
   runPythonAsync: (code: string) => Promise<any>
   runPython: (code: string) => any
@@ -11,6 +22,7 @@ interface Pyodide {
     set: (key: string, value: any) => void
     get: (key: string) => any
   }
+  FS: EmscriptenFS
 }
 
 declare global {
