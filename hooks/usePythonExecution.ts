@@ -492,7 +492,7 @@ builtins.input = input
         return
       }
 
-      const result = await pyodide.runPythonAsync(wrappedCode).catch(async (err) => {
+      const result = await pyodide.runPythonAsync(wrappedCode).catch(async (err: any) => {
         if (executionAbortedRef.current) {
           return null
         }
