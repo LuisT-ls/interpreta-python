@@ -22,11 +22,11 @@ body {
   .text-balance {
     text-wrap: balance;
   }
-  
+
   .no-scrollbar::-webkit-scrollbar {
     display: none;
   }
-  
+
   .no-scrollbar {
     -ms-overflow-style: none;
     scrollbar-width: none;
@@ -60,3 +60,46 @@ body {
   background: rgba(75, 85, 99, 0.7);
 }
 
+/* Modo Zen - esconde header e footer */
+.zen-mode header,
+.zen-mode footer {
+  display: none;
+}
+
+.zen-mode main {
+  height: 100vh;
+  overflow: hidden;
+}
+
+/* Melhorar área de interação dos separadores redimensionáveis */
+[data-panel-separator] {
+  position: relative !important;
+  flex-shrink: 0;
+  user-select: none;
+  touch-action: none;
+  z-index: 10;
+}
+
+/* Separador vertical (horizontal layout) - aumentar área de interação */
+[data-panel-group][data-panel-group-orientation="horizontal"] [data-panel-separator] {
+  width: 8px !important;
+  min-width: 8px !important;
+  margin: 0 -3px;
+  cursor: col-resize !important;
+}
+
+/* Separador horizontal (vertical layout) - aumentar área de interação */
+[data-panel-group][data-panel-group-orientation="vertical"] [data-panel-separator] {
+  height: 8px !important;
+  min-height: 8px !important;
+  margin: -3px 0;
+  cursor: row-resize !important;
+}
+
+/* Garantir que toda a área do separador seja interativa */
+[data-panel-separator]::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+}

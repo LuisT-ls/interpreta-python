@@ -2,9 +2,11 @@
 
 import { useState, useRef, useCallback, useEffect } from 'react'
 import JSZip from 'jszip'
+import { Panel, Group, Separator } from 'react-resizable-panels'
 import { usePyodide } from '@/hooks/usePyodide'
 import { useLayout } from '@/hooks/useLayout'
 import { useEditorTabs } from '@/hooks/useEditorTabs'
+import { useZenMode } from '@/hooks/useZenMode'
 import { PythonEditor } from '@/components/PythonEditor'
 import { OutputTerminal } from '@/components/OutputTerminal'
 import { ThemeToggle } from '@/components/ThemeToggle'
@@ -12,6 +14,7 @@ import { AboutModal } from '@/components/AboutModal'
 import { LayoutSelector } from '@/components/LayoutSelector'
 import { EditorTabs } from '@/components/EditorTabs'
 import { ExportMenu } from '@/components/ExportMenu'
+import { CommandPalette, Command } from '@/components/CommandPalette'
 
 /**
  * Interface para o resultado do parsing de erros do Pyodide
@@ -460,9 +463,13 @@ export default function Home() {
 
   const { pyodide, loading, error } = usePyodide()
   const { layout, changeLayout, isMounted } = useLayout()
+  const { isZenMode, toggleZenMode, isMounted: isZenMounted } = useZenMode()
 
   // Referência para o input de arquivo (oculto)
   const fileInputRef = useRef<HTMLInputElement>(null)
+
+  // Estado para Command Palette
+  const [isCommandPaletteOpen, setIsCommandPaletteOpen] = useState(false)
 
   /**
    * Validação em tempo real do código Python
@@ -1391,9 +1398,116 @@ builtins.input = input
     localStorage.setItem('python-web-ide-font-size', String(newSize))
   }
 
+  // Função para limpar terminal
+  const clearTerminal = useCallback(() => {
+    updateTabOutput(activeTabId, '', false)
+  }, [activeTabId, updateTabOutput])
+
+  // Função para formatar código (básico - indentação)
+  const formatCode = useCallback(() => {
+    // Formatação básica: remover espaços extras e normalizar indentação
+    const lines = activeTab.code.split('\n')
+    const formatted = lines
+      .map((line) => line.trimEnd())
+      .join('\n')
+      .replace(/\n{3,}/g, '\n\n') // Remover múltiplas linhas vazias
+
+    if (formatted !== activeTab.code) {
+      updateTabCode(activeTabId, formatted)
+    }
+  }, [activeTab.code, activeTabId, updateTabCode])
+
+  // Função para alternar tema
+  const toggleTheme = useCallback(() => {
+    const isDark = document.documentElement.classList.contains('dark')
+    if (isDark) {
+      document.documentElement.classList.remove('dark')
+      localStorage.setItem('theme', 'light')
+    } else {
+      document.documentElement.classList.add('dark')
+      localStorage.setItem('theme', 'dark')
+    }
+  }, [])
+
+  // Comandos da Command Palette
+  const commands: Command[] = [
+    {
+      id: 'toggle-theme',
+      label: 'Alternar Tema',
+      description: 'Alternar entre tema claro e escuro',
+      keywords: ['tema', 'theme', 'dark', 'light', 'modo escuro'],
+      action: toggleTheme,
+      icon: (
+        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z" />
+        </svg>
+      ),
+    },
+    {
+      id: 'execute',
+      label: 'Executar Código',
+      description: 'Executar o código Python atual',
+      keywords: ['executar', 'run', 'executar código'],
+      action: executeCode,
+      icon: (
+        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z" />
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+        </svg>
+      ),
+    },
+    {
+      id: 'format',
+      label: 'Formatar Código',
+      description: 'Formatar e limpar o código atual',
+      keywords: ['formatar', 'format', 'limpar', 'clean'],
+      action: formatCode,
+      icon: (
+        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+        </svg>
+      ),
+    },
+    {
+      id: 'clear-terminal',
+      label: 'Limpar Terminal',
+      description: 'Limpar a saída do terminal',
+      keywords: ['limpar', 'clear', 'terminal', 'saída'],
+      action: clearTerminal,
+      icon: (
+        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+        </svg>
+      ),
+    },
+    {
+      id: 'zen-mode',
+      label: isZenMode ? 'Sair do Modo Zen' : 'Modo Zen',
+      description: isZenMode ? 'Sair do modo foco' : 'Focar apenas no editor',
+      keywords: ['zen', 'foco', 'focus', 'fullscreen', 'tela cheia'],
+      action: toggleZenMode,
+      icon: (
+        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          {isZenMode ? (
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4" />
+          ) : (
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4" />
+          )}
+        </svg>
+      ),
+    },
+  ]
+
   // Atalhos de teclado globais
   useEffect(() => {
     const handleGlobalKeyDown = (e: KeyboardEvent) => {
+      // Ctrl + P ou Cmd + P: Abrir Command Palette
+      if ((e.ctrlKey || e.metaKey) && e.key === 'p' && !e.shiftKey) {
+        e.preventDefault()
+        setIsCommandPaletteOpen(true)
+        return
+      }
+
       // Ctrl + Enter ou F8: Executar código
       if (((e.ctrlKey || e.metaKey) && e.key === 'Enter') || e.key === 'F8') {
         e.preventDefault()
@@ -1418,49 +1532,72 @@ builtins.input = input
 
     window.addEventListener('keydown', handleGlobalKeyDown)
     return () => window.removeEventListener('keydown', handleGlobalKeyDown)
-  }, [executeCode, isExecuting, stopExecution])
+  }, [executeCode, isExecuting, stopExecution, isCommandPaletteOpen])
 
   return (
-    <div className="min-h-screen bg-gray-50 dark:bg-gray-950 transition-colors">
+    <div className={`min-h-screen bg-gray-50 dark:bg-gray-950 transition-colors ${isZenMode ? 'zen-mode' : ''}`}>
       <AboutModal isOpen={isAboutModalOpen} onClose={() => setIsAboutModalOpen(false)} />
+      <CommandPalette
+        isOpen={isCommandPaletteOpen}
+        onClose={() => setIsCommandPaletteOpen(false)}
+        commands={commands}
+      />
       {/* Header */}
-      <header className="sticky top-0 z-10 bg-white/80 dark:bg-gray-900/80 backdrop-blur-sm border-b border-gray-200 dark:border-gray-800">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex items-center justify-between h-16">
-            <div className="flex items-center gap-3">
-              {/* Logo */}
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img
-                src="/logo.png"
-                alt="Interpretador Python Web - Execute código Python no navegador"
-                className="h-8 w-auto object-contain"
-                width={32}
-                height={32}
-              />
-              <h1 className="text-xl font-bold text-gray-900 dark:text-gray-100">
-                Interpretador Python Web
-              </h1>
-            </div>
-            <div className="flex items-center gap-3">
-              {isMounted && <LayoutSelector currentLayout={layout} onLayoutChange={changeLayout} />}
-              <button
-                onClick={() => setIsAboutModalOpen(true)}
-                className="p-2 text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 transition-colors rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800"
-                title="Sobre"
-                aria-label="Sobre"
-              >
-                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                </svg>
-              </button>
-              <ThemeToggle />
+      {(!isZenMode || !isZenMounted) && (
+        <header className="sticky top-0 z-10 bg-white/80 dark:bg-gray-900/80 backdrop-blur-sm border-b border-gray-200 dark:border-gray-800">
+          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div className="flex items-center justify-between h-16">
+              <div className="flex items-center gap-3">
+                {/* Logo */}
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  src="/logo.png"
+                  alt="Interpretador Python Web - Execute código Python no navegador"
+                  className="h-8 w-auto object-contain"
+                  width={32}
+                  height={32}
+                />
+                <h1 className="text-xl font-bold text-gray-900 dark:text-gray-100">
+                  Interpretador Python Web
+                </h1>
+              </div>
+              <div className="flex items-center gap-3">
+                {isMounted && <LayoutSelector currentLayout={layout} onLayoutChange={changeLayout} />}
+                <button
+                  onClick={toggleZenMode}
+                  className="p-2 text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 transition-colors rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800"
+                  title={isZenMode ? 'Sair do Modo Zen' : 'Modo Zen'}
+                  aria-label={isZenMode ? 'Sair do Modo Zen' : 'Modo Zen'}
+                >
+                  {isZenMode ? (
+                    <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                  ) : (
+                    <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4" />
+                    </svg>
+                  )}
+                </button>
+                <button
+                  onClick={() => setIsAboutModalOpen(true)}
+                  className="p-2 text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 transition-colors rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800"
+                  title="Sobre"
+                  aria-label="Sobre"
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                  </svg>
+                </button>
+                <ThemeToggle />
+              </div>
             </div>
           </div>
-        </div>
-      </header>
+        </header>
+      )}
 
       {/* Main Content */}
-      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
+      <main className={`${isZenMode ? 'max-w-full mx-0 px-0 py-0' : 'max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6'}`}>
         {error ? (
           <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg p-4">
             <p className="text-red-800 dark:text-red-200 font-medium">
@@ -1471,134 +1608,217 @@ builtins.input = input
             </p>
           </div>
         ) : (
-          <div className="space-y-4">
+          <div className={`space-y-4 ${isZenMode ? 'h-screen flex flex-col' : ''}`}>
             {/* Execute and Stop Buttons */}
-            <div className="flex justify-center items-center gap-3">
-              <button
-                onClick={executeCode}
-                disabled={loading || isExecuting || !pyodide}
-                className="px-8 py-3 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-400 disabled:cursor-not-allowed text-white font-semibold rounded-lg shadow-lg hover:shadow-xl transform hover:scale-105 transition-all duration-200 flex items-center gap-2"
-              >
-                {isExecuting ? (
-                  <>
-                    <svg className="animate-spin h-5 w-5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                    </svg>
-                    <span>Executando...</span>
-                  </>
-                ) : loading ? (
-                  <>
-                    <svg className="animate-spin h-5 w-5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                    </svg>
-                    <span>Carregando Pyodide...</span>
-                  </>
-                ) : (
-                  <>
-                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z" />
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                    </svg>
-                    <span>Executar Código</span>
-                  </>
-                )}
-              </button>
-
-              {isExecuting && (
+            {!isZenMode && (
+              <div className="flex justify-center items-center gap-3">
                 <button
-                  onClick={stopExecution}
-                  className="px-6 py-3 bg-red-600 hover:bg-red-700 text-white font-semibold rounded-lg shadow-lg hover:shadow-xl transform hover:scale-105 transition-all duration-200 flex items-center gap-2"
-                  title="Parar execução"
-                  aria-label="Parar execução do código"
+                  onClick={executeCode}
+                  disabled={loading || isExecuting || !pyodide}
+                  className="px-8 py-3 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-400 disabled:cursor-not-allowed text-white font-semibold rounded-lg shadow-lg hover:shadow-xl transform hover:scale-105 transition-all duration-200 flex items-center gap-2"
                 >
-                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 10h6v4H9z" />
-                  </svg>
-                  <span>Parar</span>
+                  {isExecuting ? (
+                    <>
+                      <svg className="animate-spin h-5 w-5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                      </svg>
+                      <span>Executando...</span>
+                    </>
+                  ) : loading ? (
+                    <>
+                      <svg className="animate-spin h-5 w-5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                      </svg>
+                      <span>Carregando Pyodide...</span>
+                    </>
+                  ) : (
+                    <>
+                      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z" />
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                      </svg>
+                      <span>Executar Código</span>
+                    </>
+                  )}
                 </button>
-              )}
-            </div>
 
-            {/* Layout dinâmico baseado na escolha do usuário */}
+                {isExecuting && (
+                  <button
+                    onClick={stopExecution}
+                    className="px-6 py-3 bg-red-600 hover:bg-red-700 text-white font-semibold rounded-lg shadow-lg hover:shadow-xl transform hover:scale-105 transition-all duration-200 flex items-center gap-2"
+                    title="Parar execução"
+                    aria-label="Parar execução do código"
+                  >
+                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 10h6v4H9z" />
+                    </svg>
+                    <span>Parar</span>
+                  </button>
+                )}
+              </div>
+            )}
+
+            {/* Layout dinâmico baseado na escolha do usuário com painéis redimensionáveis */}
             {isMounted && (
-              <div
-                className={`${layout === 'bottom' || layout === 'top'
-                  ? 'flex flex-col gap-4'
-                  : 'grid grid-cols-1 lg:grid-cols-2 gap-4'
-                  }`}
-              >
-                {/* Editor Section */}
-                <div
-                  className={`bg-white dark:bg-gray-900 rounded-lg shadow-lg border border-gray-200 dark:border-gray-800 overflow-hidden flex flex-col ${layout === 'top' ? 'order-2' : layout === 'left' ? 'lg:order-2 order-1' : 'order-1'
-                    }`}
-                >
-                  {/* Tabs */}
-                  <EditorTabs
-                    tabs={tabs}
-                    activeTabId={activeTabId}
-                    onTabClick={setActiveTabId}
-                    onTabClose={closeTab}
-                    onNewTab={createNewTab}
-                    onImport={importCode}
-                    onExportCurrent={exportCurrentTab}
-                    onExportAll={exportAllTabs}
-                    fontSize={fontSize}
-                    onFontSizeChange={handleFontSizeChange}
-                  />
-                  <div className="flex-1 h-[400px] sm:h-[500px] lg:h-[600px]">
-                    <PythonEditor
-                      code={activeTab.code}
-                      onChange={(newCode) => {
-                        updateTabCode(activeTabId, newCode)
-                        setErrorLine(null) // Limpar erro quando o código é editado
-                      }}
-                      disabled={loading || isExecuting}
-                      fileName={activeTab.name}
-                      errorLine={errorLine}
-                      onRun={executeCode}
+              <div className={isZenMode ? 'flex-1 h-full' : 'w-full'}>
+                {isZenMode ? (
+                  // Modo Zen: apenas o editor em tela cheia
+                  <div className="h-full flex flex-col bg-white dark:bg-gray-900 relative">
+                    <EditorTabs
+                      tabs={tabs}
+                      activeTabId={activeTabId}
+                      onTabClick={setActiveTabId}
+                      onTabClose={closeTab}
+                      onNewTab={createNewTab}
+                      onImport={importCode}
+                      onExportCurrent={exportCurrentTab}
+                      onExportAll={exportAllTabs}
                       fontSize={fontSize}
+                      onFontSizeChange={handleFontSizeChange}
                     />
+                    <div className="flex-1 h-full">
+                      <PythonEditor
+                        code={activeTab.code}
+                        onChange={(newCode) => {
+                          updateTabCode(activeTabId, newCode)
+                          setErrorLine(null)
+                        }}
+                        disabled={loading || isExecuting}
+                        fileName={activeTab.name}
+                        errorLine={errorLine}
+                        onRun={executeCode}
+                        fontSize={fontSize}
+                      />
+                    </div>
+                    {/* Zen Mode Overlay */}
+                    <div className="absolute bottom-6 right-6 flex flex-col items-end gap-2 z-50">
+                      <div className="text-xs text-gray-500 dark:text-gray-400 bg-white/80 dark:bg-gray-800/80 backdrop-blur px-2 py-1 rounded shadow-sm">
+                        Mais opções (Ctrl + P)
+                      </div>
+                       <button
+                         onClick={toggleZenMode}
+                         className="flex items-center gap-2 px-4 py-2 bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-200 rounded-full shadow-lg border border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700 transition-all transform hover:scale-105"
+                       >
+                         <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20 12H4" />
+                         </svg>
+                         <span>Sair do Modo Zen</span>
+                       </button>
+                    </div>
                   </div>
-                </div>
-
-                {/* Terminal Section */}
-                <div
-                  className={`bg-white dark:bg-gray-900 rounded-lg shadow-lg border border-gray-200 dark:border-gray-800 overflow-hidden ${layout === 'top' ? 'order-1' : layout === 'left' ? 'lg:order-1 order-2' : 'order-2'
-                    }`}
-                >
-                  <div className="h-[300px] sm:h-[400px] lg:h-[600px]">
-                    <OutputTerminal
-                      output={activeTab.output}
-                      isError={activeTab.hasError}
-                      isLoading={loading}
-                      isWaitingInput={isWaitingInput}
-                      inputPrompt={inputPrompt}
-                      onInputSubmit={(value) => {
-                        // Adicionar o prompt e o valor digitado à saída antes de limpar o estado
-                        const promptText = inputPrompt || ''
-                        const inputLine = promptText + value + '\n'
-
-                        // Adicionar à saída atual
-                        const currentOutput = activeTab.output
-                        const newOutput = currentOutput + inputLine
-                        updateTabOutput(activeTabId, newOutput, false)
-
-                        // Adicionar também ao buffer para manter consistência
-                        outputBufferRef.current.push(inputLine)
-
-                        setIsWaitingInput(false)
-                        setInputPrompt('')
-                        if (inputResolveRef.current) {
-                          inputResolveRef.current(value)
-                          inputResolveRef.current = null
-                        }
-                      }}
-                    />
-                  </div>
-                </div>
+                ) : (
+                  // Layout normal com painéis redimensionáveis
+                  <Group
+                    orientation={layout === 'bottom' || layout === 'top' ? 'vertical' : 'horizontal'}
+                    className="h-[calc(100vh-12rem)] min-h-[600px] w-full"
+                  >
+                    {(layout === 'top' || layout === 'left') && (
+                      <>
+                        <Panel defaultSize={50} minSize={20} className="flex flex-col">
+                          <div className="h-full bg-white dark:bg-gray-900 rounded-lg shadow-lg border border-gray-200 dark:border-gray-800 overflow-hidden flex flex-col">
+                            <div className="h-[300px] sm:h-[400px] lg:h-full">
+                              <OutputTerminal
+                                output={activeTab.output}
+                                isError={activeTab.hasError}
+                                isLoading={loading}
+                                isWaitingInput={isWaitingInput}
+                                inputPrompt={inputPrompt}
+                                onInputSubmit={(value) => {
+                                  const promptText = inputPrompt || ''
+                                  const inputLine = promptText + value + '\n'
+                                  const currentOutput = activeTab.output
+                                  const newOutput = currentOutput + inputLine
+                                  updateTabOutput(activeTabId, newOutput, false)
+                                  outputBufferRef.current.push(inputLine)
+                                  setIsWaitingInput(false)
+                                  setInputPrompt('')
+                                  if (inputResolveRef.current) {
+                                    inputResolveRef.current(value)
+                                    inputResolveRef.current = null
+                                  }
+                                }}
+                              />
+                            </div>
+                          </div>
+                        </Panel>
+                        <Separator className="bg-transparent hover:bg-blue-400/20 dark:hover:bg-blue-600/20 transition-colors cursor-col-resize relative group">
+                          <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                            <div className="w-0.5 h-full bg-gray-300 dark:bg-gray-700 group-hover:bg-blue-500 dark:group-hover:bg-blue-400 transition-colors" />
+                          </div>
+                        </Separator>
+                      </>
+                    )}
+                    <Panel defaultSize={50} minSize={20} className="flex flex-col">
+                      <div className="h-full bg-white dark:bg-gray-900 rounded-lg shadow-lg border border-gray-200 dark:border-gray-800 overflow-hidden flex flex-col">
+                        <EditorTabs
+                          tabs={tabs}
+                          activeTabId={activeTabId}
+                          onTabClick={setActiveTabId}
+                          onTabClose={closeTab}
+                          onNewTab={createNewTab}
+                          onImport={importCode}
+                          onExportCurrent={exportCurrentTab}
+                          onExportAll={exportAllTabs}
+                          fontSize={fontSize}
+                          onFontSizeChange={handleFontSizeChange}
+                        />
+                        <div className="flex-1 h-full">
+                          <PythonEditor
+                            code={activeTab.code}
+                            onChange={(newCode) => {
+                              updateTabCode(activeTabId, newCode)
+                              setErrorLine(null)
+                            }}
+                            disabled={loading || isExecuting}
+                            fileName={activeTab.name}
+                            errorLine={errorLine}
+                            onRun={executeCode}
+                            fontSize={fontSize}
+                          />
+                        </div>
+                      </div>
+                    </Panel>
+                    {(layout === 'bottom' || layout === 'right') && (
+                      <>
+                        <Separator className="bg-transparent hover:bg-blue-400/20 dark:hover:bg-blue-600/20 transition-colors cursor-row-resize relative group">
+                          <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                            <div className="h-0.5 w-full bg-gray-300 dark:bg-gray-700 group-hover:bg-blue-500 dark:group-hover:bg-blue-400 transition-colors" />
+                          </div>
+                        </Separator>
+                        <Panel defaultSize={50} minSize={20} className="flex flex-col">
+                          <div className="h-full bg-white dark:bg-gray-900 rounded-lg shadow-lg border border-gray-200 dark:border-gray-800 overflow-hidden flex flex-col">
+                            <div className="h-[300px] sm:h-[400px] lg:h-full">
+                              <OutputTerminal
+                                output={activeTab.output}
+                                isError={activeTab.hasError}
+                                isLoading={loading}
+                                isWaitingInput={isWaitingInput}
+                                inputPrompt={inputPrompt}
+                                onInputSubmit={(value) => {
+                                  const promptText = inputPrompt || ''
+                                  const inputLine = promptText + value + '\n'
+                                  const currentOutput = activeTab.output
+                                  const newOutput = currentOutput + inputLine
+                                  updateTabOutput(activeTabId, newOutput, false)
+                                  outputBufferRef.current.push(inputLine)
+                                  setIsWaitingInput(false)
+                                  setInputPrompt('')
+                                  if (inputResolveRef.current) {
+                                    inputResolveRef.current(value)
+                                    inputResolveRef.current = null
+                                  }
+                                }}
+                              />
+                            </div>
+                          </div>
+                        </Panel>
+                      </>
+                    )}
+                  </Group>
+                )}
               </div>
             )}
           </div>
@@ -1606,79 +1826,81 @@ builtins.input = input
       </main>
 
       {/* Footer */}
-      <footer className="mt-12 py-6 border-t border-gray-200 dark:border-gray-800">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex flex-col md:flex-row items-center justify-between gap-4 text-sm text-gray-600 dark:text-gray-400">
-            {/* Informações do desenvolvedor */}
-            <div className="flex flex-col md:flex-row items-center gap-2 md:gap-4">
-              <p>
-                © {new Date().getFullYear()} Desenvolvido por{' '}
+      {!isZenMode && (
+        <footer className="mt-12 py-6 border-t border-gray-200 dark:border-gray-800">
+          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div className="flex flex-col md:flex-row items-center justify-between gap-4 text-sm text-gray-600 dark:text-gray-400">
+              {/* Informações do desenvolvedor */}
+              <div className="flex flex-col md:flex-row items-center gap-2 md:gap-4">
+                <p>
+                  © {new Date().getFullYear()} Desenvolvido por{' '}
+                  <a
+                    href="https://luistls.vercel.app/"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-blue-600 dark:text-blue-400 hover:underline font-medium"
+                  >
+                    Luis Teixeira
+                  </a>
+                </p>
+                <span className="hidden md:inline">•</span>
+                <div className="flex items-center gap-3">
+                  <a
+                    href="https://github.com/LuisT-ls/interpreta-python"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-100 transition-colors"
+                    title="Ver no GitHub"
+                    aria-label="GitHub do projeto"
+                  >
+                    <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
+                      <path
+                        fillRule="evenodd"
+                        d="M12 2C6.477 2 2 6.484 2 12.017c0 4.425 2.865 8.18 6.839 9.504.5.092.682-.217.682-.483 0-.237-.008-.868-.013-1.703-2.782.605-3.369-1.343-3.369-1.343-.454-1.158-1.11-1.466-1.11-1.466-.908-.62.069-.608.069-.608 1.003.07 1.531 1.032 1.531 1.032.892 1.53 2.341 1.088 2.91.832.092-.647.35-1.088.636-1.338-2.22-.253-4.555-1.113-4.555-4.951 0-1.093.39-1.988 1.029-2.688-.103-.253-.446-1.272.098-2.65 0 0 .84-.27 2.75 1.026A9.564 9.564 0 0112 6.844c.85.004 1.705.115 2.504.337 1.909-1.296 2.747-1.027 2.747-1.027.546 1.379.202 2.398.1 2.651.64.7 1.028 1.595 1.028 2.688 0 3.848-2.339 4.695-4.566 4.943.359.309.678.92.678 1.855 0 1.338-.012 2.419-.012 2.747 0 .268.18.58.688.482A10.019 10.019 0 0022 12.017C22 6.484 17.522 2 12 2z"
+                        clipRule="evenodd"
+                      />
+                    </svg>
+                  </a>
+                  <a
+                    href="https://www.linkedin.com/in/luis-tei"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-gray-600 dark:text-gray-400 hover:text-blue-600 dark:hover:text-blue-400 transition-colors"
+                    title="Ver no LinkedIn"
+                    aria-label="LinkedIn do desenvolvedor"
+                  >
+                    <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
+                      <path d="M20.447 20.452h-3.554v-5.569c0-1.328-.027-3.037-1.852-3.037-1.853 0-2.136 1.445-2.136 2.939v5.667H9.351V9h3.414v1.561h.046c.477-.9 1.637-1.85 3.37-1.85 3.601 0 4.267 2.37 4.267 5.455v6.286zM5.337 7.433c-1.144 0-2.063-.926-2.063-2.065 0-1.138.92-2.063 2.063-2.063 1.14 0 2.064.925 2.064 2.063 0 1.139-.925 2.065-2.064 2.065zm1.782 13.019H3.555V9h3.564v11.452zM22.225 0H1.771C.792 0 0 .774 0 1.729v20.542C0 23.227.792 24 1.771 24h20.451C23.2 24 24 23.227 24 22.271V1.729C24 .774 23.2 0 22.222 0h.003z" />
+                    </svg>
+                  </a>
+                </div>
+              </div>
+
+              {/* Powered by */}
+              <div className="flex items-center gap-2">
+                <span>Powered by</span>
                 <a
-                  href="https://luistls.vercel.app/"
+                  href="https://pyodide.org"
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="text-blue-600 dark:text-blue-400 hover:underline font-medium"
+                  className="text-blue-600 dark:text-blue-400 hover:underline"
                 >
-                  Luis Teixeira
+                  Pyodide
                 </a>
-              </p>
-              <span className="hidden md:inline">•</span>
-              <div className="flex items-center gap-3">
+                <span>e</span>
                 <a
-                  href="https://github.com/LuisT-ls/interpreta-python"
+                  href="https://nextjs.org"
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-100 transition-colors"
-                  title="Ver no GitHub"
-                  aria-label="GitHub do projeto"
+                  className="text-blue-600 dark:text-blue-400 hover:underline"
                 >
-                  <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
-                    <path
-                      fillRule="evenodd"
-                      d="M12 2C6.477 2 2 6.484 2 12.017c0 4.425 2.865 8.18 6.839 9.504.5.092.682-.217.682-.483 0-.237-.008-.868-.013-1.703-2.782.605-3.369-1.343-3.369-1.343-.454-1.158-1.11-1.466-1.11-1.466-.908-.62.069-.608.069-.608 1.003.07 1.531 1.032 1.531 1.032.892 1.53 2.341 1.088 2.91.832.092-.647.35-1.088.636-1.338-2.22-.253-4.555-1.113-4.555-4.951 0-1.093.39-1.988 1.029-2.688-.103-.253-.446-1.272.098-2.65 0 0 .84-.27 2.75 1.026A9.564 9.564 0 0112 6.844c.85.004 1.705.115 2.504.337 1.909-1.296 2.747-1.027 2.747-1.027.546 1.379.202 2.398.1 2.651.64.7 1.028 1.595 1.028 2.688 0 3.848-2.339 4.695-4.566 4.943.359.309.678.92.678 1.855 0 1.338-.012 2.419-.012 2.747 0 .268.18.58.688.482A10.019 10.019 0 0022 12.017C22 6.484 17.522 2 12 2z"
-                      clipRule="evenodd"
-                    />
-                  </svg>
-                </a>
-                <a
-                  href="https://www.linkedin.com/in/luis-tei"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="text-gray-600 dark:text-gray-400 hover:text-blue-600 dark:hover:text-blue-400 transition-colors"
-                  title="Ver no LinkedIn"
-                  aria-label="LinkedIn do desenvolvedor"
-                >
-                  <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
-                    <path d="M20.447 20.452h-3.554v-5.569c0-1.328-.027-3.037-1.852-3.037-1.853 0-2.136 1.445-2.136 2.939v5.667H9.351V9h3.414v1.561h.046c.477-.9 1.637-1.85 3.37-1.85 3.601 0 4.267 2.37 4.267 5.455v6.286zM5.337 7.433c-1.144 0-2.063-.926-2.063-2.065 0-1.138.92-2.063 2.063-2.063 1.14 0 2.064.925 2.064 2.063 0 1.139-.925 2.065-2.064 2.065zm1.782 13.019H3.555V9h3.564v11.452zM22.225 0H1.771C.792 0 0 .774 0 1.729v20.542C0 23.227.792 24 1.771 24h20.451C23.2 24 24 23.227 24 22.271V1.729C24 .774 23.2 0 22.222 0h.003z" />
-                  </svg>
+                  Next.js
                 </a>
               </div>
             </div>
-
-            {/* Powered by */}
-            <div className="flex items-center gap-2">
-              <span>Powered by</span>
-              <a
-                href="https://pyodide.org"
-                target="_blank"
-                rel="noopener noreferrer"
-                className="text-blue-600 dark:text-blue-400 hover:underline"
-              >
-                Pyodide
-              </a>
-              <span>e</span>
-              <a
-                href="https://nextjs.org"
-                target="_blank"
-                rel="noopener noreferrer"
-                className="text-blue-600 dark:text-blue-400 hover:underline"
-              >
-                Next.js
-              </a>
-            </div>
           </div>
-        </div>
-      </footer>
+        </footer>
+      )}
 
       {/* Input oculto para importar arquivos */}
       <input
