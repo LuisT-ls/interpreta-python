@@ -31,6 +31,8 @@ export default function Home() {
     closeTab,
     updateTabCode,
     updateTabOutput,
+    addTabPlot,
+    clearTabPlots,
   } = useEditorTabs()
 
   const [isAboutModalOpen, setIsAboutModalOpen] = useState(false)
@@ -56,6 +58,8 @@ export default function Home() {
     currentOutput: activeTab.output,
     updateTabOutput,
     setErrorLine: () => {}, // Será definido pelo hook de validação
+    addTabPlot,
+    clearTabPlots,
   })
 
   // Validação em tempo real de sintaxe
@@ -656,6 +660,7 @@ export default function Home() {
                                 isWaitingInput={isWaitingInput}
                                 inputPrompt={inputPrompt}
                                 onInputSubmit={onInputSubmit}
+                                plots={activeTab.plots}
                               />
                             </div>
                           </div>
@@ -715,6 +720,7 @@ export default function Home() {
                       isWaitingInput={isWaitingInput}
                       inputPrompt={inputPrompt}
                       onInputSubmit={onInputSubmit}
+                      plots={activeTab.plots}
                     />
                   </div>
                 </div>

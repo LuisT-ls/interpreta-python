@@ -1,6 +1,8 @@
 'use client'
 
 import { useRef, useEffect } from 'react'
+import { MatplotlibPlot } from './MatplotlibPlot'
+import { MatplotlibPlot as MatplotlibPlotType } from '@/hooks/useEditorTabs'
 
 interface OutputTerminalProps {
   output: string
@@ -9,6 +11,7 @@ interface OutputTerminalProps {
   isWaitingInput?: boolean
   inputPrompt?: string
   onInputSubmit?: (value: string) => void
+  plots?: MatplotlibPlotType[]
 }
 
 export function OutputTerminal({
@@ -17,7 +20,8 @@ export function OutputTerminal({
   isLoading = false,
   isWaitingInput = false,
   inputPrompt = '',
-  onInputSubmit
+  onInputSubmit,
+  plots = []
 }: OutputTerminalProps) {
   const inputRef = useRef<HTMLInputElement>(null)
   const outputRef = useRef<HTMLDivElement>(null)
@@ -67,6 +71,17 @@ export function OutputTerminal({
           </div>
         ) : (
           <>
+            {/* Renderizar gráficos matplotlib */}
+            {plots.map((plot) => (
+              <MatplotlibPlot
+                key={plot.id}
+                id={plot.id}
+                imageData={plot.imageData}
+                width={plot.width}
+                height={plot.height}
+              />
+            ))}
+            
             {output && (
               <pre
                 className={`font-mono text-sm whitespace-pre-wrap break-words ${isError ? 'text-red-400' : 'text-green-400'
@@ -91,7 +106,7 @@ export function OutputTerminal({
                 />
               </form>
             )}
-            {!output && !isWaitingInput && (
+            {!output && !plots.length && !isWaitingInput && (
               <div className="text-gray-500 font-mono text-sm">
                 {isError ? 'Erro ao executar código' : 'Nenhuma saída ainda. Execute seu código para ver os resultados.'}
               </div>

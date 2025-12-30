@@ -12,6 +12,8 @@ interface UsePythonExecutionOptions {
   currentOutput: string
   updateTabOutput: (tabId: string, output: string, hasError: boolean) => void
   setErrorLine: (line: number | null) => void
+  addTabPlot?: (tabId: string, plot: { id: string; imageData: string; width: number; height: number; timestamp: number }) => void
+  clearTabPlots?: (tabId: string) => void
 }
 
 /**
@@ -27,6 +29,8 @@ export function usePythonExecution({
   currentOutput,
   updateTabOutput,
   setErrorLine,
+  addTabPlot,
+  clearTabPlots,
 }: UsePythonExecutionOptions) {
   const [isExecuting, setIsExecuting] = useState(false)
   const [isWaitingInput, setIsWaitingInput] = useState(false)
@@ -84,7 +88,7 @@ export function usePythonExecution({
     // Adicionar mensagem de cancelamento à saída
     const cancelMessage = '\n\n⚠️ Execução interrompida pelo usuário'
     updateTabOutput(activeTabId, currentOutput + cancelMessage, false)
-  }, [pyodide, activeTabId, currentOutput, updateTabOutput])
+  }, [pyodide, activeTabId, currentOutput, updateTabOutput, addTabPlot, clearTabPlots])
 
   const executeCode = useCallback(async () => {
     if (!pyodide || loading || isExecuting) return
@@ -94,8 +98,96 @@ export function usePythonExecution({
     setErrorLine(null)
     updateTabOutput(activeTabId, '', false)
     outputBufferRef.current = []
+    
+    // Limpar plots anteriores
+    if (clearTabPlots) {
+      clearTabPlots(activeTabId)
+    }
 
     try {
+      // Configurar callback para capturar gráficos matplotlib
+      if (addTabPlot) {
+        // Criar função global para receber gráficos do Python
+        (window as any).create_matplotlib_canvas = (
+          plotId: string,
+          imageData: string,
+          width: number,
+          height: number
+        ) => {
+          addTabPlot(activeTabId, {
+            id: plotId,
+            imageData,
+            width,
+            height,
+            timestamp: Date.now(),
+          })
+        }
+
+        // Inicializar contador de plots
+        if (!(window as any).plot_id_counter) {
+          (window as any).plot_id_counter = 0
+        }
+
+        // Configurar matplotlib se disponível
+        try {
+          // Tentar carregar e configurar matplotlib
+          await pyodide.loadPackage('matplotlib')
+          
+          pyodide.runPython(`
+import matplotlib
+matplotlib.use('Agg')  # Backend não-interativo
+import matplotlib.pyplot as plt
+import io
+import base64
+
+# Criar função para capturar gráfico
+def show_plot():
+    """Captura o gráfico atual e retorna como canvas"""
+    import js
+    
+    fig = plt.gcf()
+    if fig is None or len(fig.axes) == 0:
+        return None
+    
+    # Renderizar em buffer PNG
+    buf = io.BytesIO()
+    fig.savefig(buf, format='png', bbox_inches='tight', dpi=100)
+    buf.seek(0)
+    
+    # Converter para base64
+    img_data = base64.b64encode(buf.read()).decode('utf-8')
+    
+    # Criar ID único
+    plot_id = f"plot_{js.plot_id_counter}"
+    js.plot_id_counter += 1
+    
+    # Obter dimensões da figura
+    width = int(fig.get_figwidth() * fig.dpi)
+    height = int(fig.get_figheight() * fig.dpi)
+    
+    # Chamar callback JS para criar canvas
+    js.create_matplotlib_canvas(plot_id, img_data, width, height)
+    
+    # Limpar figura
+    plt.clf()
+    plt.close(fig)
+    
+    return plot_id
+
+# Substituir plt.show() para capturar gráficos
+_original_show = plt.show
+def custom_show(*args, **kwargs):
+    result = show_plot()
+    # Não chamar _original_show para evitar popup
+    return result
+
+plt.show = custom_show
+          `)
+        } catch (e) {
+          // matplotlib pode não estar disponível, isso é ok
+          console.debug('Matplotlib não disponível ou erro ao configurar:', e)
+        }
+      }
       // Configurar captura de stdout e stderr
       const stdoutHandler = (text: string) => {
         try {

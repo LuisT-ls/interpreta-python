@@ -2,12 +2,21 @@
 
 import { useState, useCallback, useEffect } from 'react'
 
+export interface MatplotlibPlot {
+  id: string
+  imageData: string // Base64 encoded PNG
+  width: number
+  height: number
+  timestamp: number
+}
+
 export interface EditorTab {
   id: string
   name: string
   code: string
   output: string
   hasError: boolean
+  plots: MatplotlibPlot[]
 }
 
 const DEFAULT_CODE = `# Bem-vindo ao Interpretador Python Web!
@@ -32,7 +41,12 @@ export function useEditorTabs() {
       try {
         const savedTabs = localStorage.getItem('python-web-ide-tabs')
         if (savedTabs) {
-          return JSON.parse(savedTabs)
+          const parsed = JSON.parse(savedTabs)
+          // Garantir que todas as abas tenham o campo plots
+          return parsed.map((tab: EditorTab) => ({
+            ...tab,
+            plots: tab.plots || [],
+          }))
         }
       } catch (e) {
         console.error('Erro ao carregar abas do localStorage:', e)
@@ -45,6 +59,7 @@ export function useEditorTabs() {
         code: DEFAULT_CODE,
         output: '',
         hasError: false,
+        plots: [],
       },
     ]
   })
@@ -99,6 +114,7 @@ export function useEditorTabs() {
       code: '',
       output: '',
       hasError: false,
+      plots: [],
     }
     setTabs((prev) => [...prev, newTab])
     setActiveTabId(newId)
@@ -131,6 +147,22 @@ export function useEditorTabs() {
     )
   }, [])
 
+  const addTabPlot = useCallback((tabId: string, plot: MatplotlibPlot) => {
+    setTabs((prev) =>
+      prev.map((tab) =>
+        tab.id === tabId ? { ...tab, plots: [...tab.plots, plot] } : tab
+      )
+    )
+  }, [])
+
+  const clearTabPlots = useCallback((tabId: string) => {
+    setTabs((prev) =>
+      prev.map((tab) =>
+        tab.id === tabId ? { ...tab, plots: [] } : tab
+      )
+    )
+  }, [])
+
   const activeTab = tabs.find((tab) => tab.id === activeTabId) || tabs[0]
 
   return {
@@ -142,6 +174,8 @@ export function useEditorTabs() {
     closeTab,
     updateTabCode,
     updateTabOutput,
+    addTabPlot,
+    clearTabPlots,
   }
 }
 
