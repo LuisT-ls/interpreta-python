@@ -238,7 +238,12 @@ export function PythonEditor({
 
     // Auto-resize do textarea
     textarea.style.height = 'auto'
-    textarea.style.height = `${textarea.scrollHeight}px`
+    const textareaHeight = textarea.scrollHeight
+    textarea.style.height = `${textareaHeight}px`
+
+    // Garantir que o overlay tenha a mesma altura mínima
+    highlight.style.minHeight = `${textareaHeight}px`
+    highlight.style.height = 'auto'
 
     // Sincronizar scroll entre textarea e highlight overlay
     const syncScroll = () => {
@@ -246,9 +251,12 @@ export function PythonEditor({
       highlight.scrollLeft = textarea.scrollLeft
     }
 
+    // Sincronizar scroll inicial
+    syncScroll()
+
     textarea.addEventListener('scroll', syncScroll)
     return () => textarea.removeEventListener('scroll', syncScroll)
-  }, [code, fontSize]) // Re-run quando fontSize mudar para garantir alinhamento
+  }, [code, fontSize, highlightedCode]) // Re-run quando código, fontSize ou highlighting mudar
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     const textarea = e.currentTarget
@@ -496,10 +504,18 @@ export function PythonEditor({
             style={{
               fontSize: `${fontSize}px`,
               lineHeight: `${lineHeight}px`,
+              zIndex: 1,
+              overflowY: 'auto',
+              overflowX: 'auto',
             }}
           >
             {code ? (
-              <div dangerouslySetInnerHTML={{ __html: highlightedCode }} />
+              <div 
+                style={{ minHeight: '100%' }}
+                dangerouslySetInnerHTML={{ 
+                  __html: highlightedCode || code.replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/\n/g, '<br>') 
+                }} 
+              />
             ) : (
               <div className="text-gray-400 dark:text-gray-500 opacity-50">
                 Digite seu código Python aqui...
@@ -519,6 +535,7 @@ export function PythonEditor({
             style={{
               fontSize: `${fontSize}px`,
               lineHeight: `${lineHeight}px`,
+              zIndex: 2,
             }}
           />
           {/* Indicador visual da linha de erro */}
