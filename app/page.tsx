@@ -419,9 +419,9 @@ export default function Home() {
       )}
       {/* Header */}
       {(!isZenMode || !isZenMounted) && (
-        <header className="sticky top-0 z-10 bg-white/95 dark:bg-gray-900/95 backdrop-blur-md border-b border-gray-200/50 dark:border-gray-800/50 shadow-sm">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex items-center justify-between h-16">
+        <header className="sticky top-0 z-10 bg-white/95 dark:bg-gray-900/95 backdrop-blur-md border-b border-gray-200/50 dark:border-gray-800/50 shadow-sm overflow-visible">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 overflow-visible">
+          <div className="flex items-center justify-between h-16 overflow-visible">
               {/* Logo e Título */}
               <div className="flex items-center gap-2 sm:gap-3 group min-w-0">
                 <div className="relative flex-shrink-0">
@@ -448,7 +448,7 @@ export default function Home() {
               {/* Controles */}
               <div className="flex items-center gap-1.5 sm:gap-2 flex-shrink-0">
                 {/* Grupo: Layout e Modo Zen */}
-                <div className="hidden sm:flex items-center gap-1.5 sm:gap-2 px-1.5 sm:px-2 py-1 rounded-lg bg-gray-50/50 dark:bg-gray-800/50 border border-gray-200/50 dark:border-gray-700/50">
+                <div className="hidden sm:flex items-center gap-1.5 sm:gap-2 px-1.5 sm:px-2 py-1 rounded-lg bg-gray-50/50 dark:bg-gray-800/50 border border-gray-200/50 dark:border-gray-700/50 overflow-visible">
               {isMounted && <LayoutSelector currentLayout={layout} onLayoutChange={changeLayout} />}
                   <div className="w-px h-5 sm:h-6 bg-gray-300 dark:bg-gray-700" />
                   <button

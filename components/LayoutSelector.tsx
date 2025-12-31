@@ -1,6 +1,7 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useRef, useEffect } from 'react'
+import { createPortal } from 'react-dom'
 import { LayoutType } from '@/hooks/useLayout'
 
 interface LayoutSelectorProps {
@@ -58,10 +59,42 @@ const layoutOptions: Array<{
 
 export function LayoutSelector({ currentLayout, onLayoutChange }: LayoutSelectorProps) {
   const [isOpen, setIsOpen] = useState(false)
+  const [dropdownPosition, setDropdownPosition] = useState({ top: 0, right: 0 })
+  const [mounted, setMounted] = useState(false)
+  const buttonRef = useRef<HTMLButtonElement>(null)
+
+  useEffect(() => {
+    setMounted(true)
+  }, [])
+
+  useEffect(() => {
+    if (isOpen && buttonRef.current) {
+      const updatePosition = () => {
+        if (buttonRef.current) {
+          const rect = buttonRef.current.getBoundingClientRect()
+          setDropdownPosition({
+            top: rect.bottom + 8, // 8px = mt-2
+            right: window.innerWidth - rect.right,
+          })
+        }
+      }
+
+      updatePosition()
+
+      window.addEventListener('resize', updatePosition)
+      window.addEventListener('scroll', updatePosition, true)
+
+      return () => {
+        window.removeEventListener('resize', updatePosition)
+        window.removeEventListener('scroll', updatePosition, true)
+      }
+    }
+  }, [isOpen])
 
   return (
-    <div className="relative">
+    <div className="relative z-[100]">
       <button
+        ref={buttonRef}
         onClick={() => setIsOpen(!isOpen)}
         className={`flex items-center gap-2 px-3 py-2 text-sm font-medium rounded-md transition-all duration-200 ${
           isOpen
@@ -80,15 +113,22 @@ export function LayoutSelector({ currentLayout, onLayoutChange }: LayoutSelector
         </svg>
       </button>
 
-      {isOpen && (
+      {isOpen && mounted && createPortal(
         <>
           <div
-            className="fixed inset-0 z-40 bg-black/20 backdrop-blur-sm"
+            className="fixed inset-0 z-[100] bg-black/20 backdrop-blur-sm"
             onClick={() => setIsOpen(false)}
             aria-hidden="true"
           />
-          <div className="absolute right-0 mt-2 w-64 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl shadow-xl z-50 overflow-hidden animate-in fade-in slide-in-from-top-2 duration-200">
-            <div className="p-2">
+          <div 
+            className="fixed w-64 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl shadow-xl z-[101] overflow-hidden animate-in fade-in slide-in-from-top-2 duration-200"
+            style={{
+              top: `${dropdownPosition.top}px`,
+              right: `${dropdownPosition.right}px`,
+              maxHeight: 'calc(100vh - 20px)',
+            }}
+          >
+            <div className="p-2 overflow-y-auto" style={{ maxHeight: 'calc(100vh - 60px)' }}>
               <div className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide px-3 py-2.5 border-b border-gray-200 dark:border-gray-700">
                 Posição do Terminal
               </div>
@@ -131,7 +171,8 @@ export function LayoutSelector({ currentLayout, onLayoutChange }: LayoutSelector
               </div>
             </div>
           </div>
-        </>
+        </>,
+        document.body
       )}
     </div>
   )
