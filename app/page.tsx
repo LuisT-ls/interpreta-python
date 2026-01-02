@@ -22,6 +22,7 @@ import { usePythonExecution } from '@/hooks/usePythonExecution'
 import { FileSystemSidebar } from '@/components/FileSystemSidebar'
 import { FileEditor } from '@/components/FileEditor'
 import { PackageManager } from '@/components/PackageManager'
+import { LoadingScreen, EditorSkeleton, TerminalSkeleton } from '@/components/LoadingScreen'
 
 export default function Home() {
   const {
@@ -39,9 +40,50 @@ export default function Home() {
 
   const [isAboutModalOpen, setIsAboutModalOpen] = useState(false)
 
-  const { pyodide, loading, error } = usePyodide()
+  const { pyodide, loading, error, progress, stage } = usePyodide()
   const { layout, changeLayout, isMounted } = useLayout()
   const { isZenMode, toggleZenMode, isMounted: isZenMounted } = useZenMode()
+
+  // Estado para controlar se deve mostrar o loading screen
+  // Só mostra em hard reload (Shift + Reload) ou primeira carga
+  const [showLoadingScreen, setShowLoadingScreen] = useState(true)
+  const [isClient, setIsClient] = useState(false)
+
+  // Ajustar o estado após a hidratação no cliente
+  useEffect(() => {
+    setIsClient(true)
+    
+    // Verificar se Pyodide já está carregado
+    // Em reload normal (F5), o script pode já estar em cache
+    const scriptExists = document.querySelector('script[src*="pyodide"]')
+    const pyodideLoaded = sessionStorage.getItem('pyodide-loaded')
+    const windowHasPyodide = typeof window.loadPyodide !== 'undefined'
+    
+    // Hard reload (Shift + F5) limpa o cache, então:
+    // - scriptExists será false (script não está no DOM)
+    // - windowHasPyodide será false (função não está disponível)
+    // - pyodideLoaded pode ser true ou false (depende se sessionStorage foi limpo)
+    
+    // Se Pyodide já está disponível (reload normal), não mostrar loading
+    // Só mostrar se for primeira carga ou hard reload
+    // Hard reload: script não existe E window.loadPyodide não existe
+    const isHardReload = !scriptExists && !windowHasPyodide
+    
+    // Mostrar loading se:
+    // 1. É hard reload (não há script nem função disponível)
+    // 2. É primeira carga (não há flag no sessionStorage)
+    const shouldShow = isHardReload || !pyodideLoaded
+    
+    setShowLoadingScreen(shouldShow)
+  }, [])
+
+  // Quando Pyodide carregar, marcar como carregado na sessão
+  useEffect(() => {
+    if (!loading && pyodide) {
+      sessionStorage.setItem('pyodide-loaded', 'true')
+      setShowLoadingScreen(false)
+    }
+  }, [loading, pyodide])
 
   // Execução de código Python
   const {
@@ -420,7 +462,7 @@ export default function Home() {
       )}
       {/* Header */}
       {(!isZenMode || !isZenMounted) && (
-        <header className="sticky top-0 z-10 bg-white/95 dark:bg-gray-900/95 backdrop-blur-md border-b border-gray-200/50 dark:border-gray-800/50 shadow-sm overflow-visible">
+        <header className="sticky top-0 z-50 bg-white/95 dark:bg-gray-900/95 backdrop-blur-md border-b border-gray-200/50 dark:border-gray-800/50 shadow-sm overflow-visible">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 overflow-visible">
           <div className="flex items-center justify-between h-16 overflow-visible">
               {/* Logo e Título */}
@@ -526,9 +568,14 @@ export default function Home() {
       )}
 
       {/* Main Content */}
-      <main className={`${isZenMode ? 'max-w-full mx-0 px-0 py-0' : 'max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6'}`}>
+      <main className={`relative ${isZenMode ? 'max-w-full mx-0 px-0 py-0' : 'max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6'}`}>
+        {/* Loading Screen Overlay - apenas em hard reload ou primeira carga */}
+        {isClient && loading && showLoadingScreen && (
+          <LoadingScreen progress={progress} stage={stage} />
+        )}
+
         {error ? (
-          <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg p-4">
+          <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg p-4 animate-in fade-in">
             <p className="text-red-800 dark:text-red-200 font-medium">
               Erro ao carregar Pyodide: {error}
             </p>
@@ -537,7 +584,7 @@ export default function Home() {
             </p>
           </div>
         ) : (
-          <div className={`space-y-4 ${isZenMode ? 'h-screen flex flex-col' : ''}`}>
+          <div className={`space-y-4 transition-smooth ${isZenMode ? 'h-screen flex flex-col' : ''} ${loading ? 'opacity-0 pointer-events-none' : 'opacity-100'}`}>
             {/* Execute and Stop Buttons */}
             {!isZenMode && (
             <div className="flex justify-center items-center gap-3">
@@ -553,14 +600,6 @@ export default function Home() {
                       <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
                     </svg>
                     <span>Executando...</span>
-                  </>
-                ) : loading ? (
-                  <>
-                    <svg className="animate-spin h-5 w-5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                    </svg>
-                    <span>Carregando Pyodide...</span>
                   </>
                 ) : (
                   <>
@@ -595,34 +634,40 @@ export default function Home() {
               <div className={isZenMode ? 'flex-1 h-full' : 'w-full'}>
                 {isZenMode ? (
                   // Modo Zen: apenas o editor em tela cheia
-                  <div className="h-full flex flex-col bg-white dark:bg-gray-900 relative">
-                    <EditorTabs
-                      tabs={tabs}
-                      activeTabId={activeTabId}
-                      onTabClick={setActiveTabId}
-                      onTabClose={closeTab}
-                      onNewTab={createNewTab}
-                      onImport={importCode}
-                      onExportCurrent={exportCurrentTab}
-                      onExportAll={exportAllTabs}
-                      onShare={shareCode}
-                      fontSize={fontSize}
-                      onFontSizeChange={handleFontSizeChange}
-                    />
-                    <div className="flex-1 h-full">
-                      <PythonEditor
-                        code={activeTab.code}
-                        onChange={(newCode) => {
-                          updateTabCode(activeTabId, newCode)
-                          setErrorLine(null)
-                        }}
-                        disabled={loading || isExecuting}
-                        fileName={activeTab.name}
-                        errorLine={errorLine}
-                        onRun={executeCode}
-                        fontSize={fontSize}
-                      />
-                    </div>
+                  <div className="h-full flex flex-col bg-white dark:bg-gray-900 relative transition-smooth">
+                    {loading ? (
+                      <EditorSkeleton />
+                    ) : (
+                      <>
+                        <EditorTabs
+                          tabs={tabs}
+                          activeTabId={activeTabId}
+                          onTabClick={setActiveTabId}
+                          onTabClose={closeTab}
+                          onNewTab={createNewTab}
+                          onImport={importCode}
+                          onExportCurrent={exportCurrentTab}
+                          onExportAll={exportAllTabs}
+                          onShare={shareCode}
+                          fontSize={fontSize}
+                          onFontSizeChange={handleFontSizeChange}
+                        />
+                        <div className="flex-1 h-full">
+                          <PythonEditor
+                            code={activeTab.code}
+                            onChange={(newCode) => {
+                              updateTabCode(activeTabId, newCode)
+                              setErrorLine(null)
+                            }}
+                            disabled={loading || isExecuting}
+                            fileName={activeTab.name}
+                            errorLine={errorLine}
+                            onRun={executeCode}
+                            fontSize={fontSize}
+                          />
+                        </div>
+                      </>
+                    )}
                     {/* Zen Mode Overlay */}
                     <div className="absolute bottom-6 right-6 flex flex-col items-end gap-2 z-50">
                       <div className="text-xs text-gray-500 dark:text-gray-400 bg-white/80 dark:bg-gray-800/80 backdrop-blur px-2 py-1 rounded shadow-sm">
@@ -654,12 +699,12 @@ export default function Home() {
                         />
                       </div>
                     )}
-                    {/* Botões flutuantes para Sistema de Arquivos e Gerenciador de Pacotes */}
+                    {/* Botões fixos na parede esquerda para Sistema de Arquivos e Gerenciador de Pacotes */}
                     {!isFileSystemOpen && (
-                      <div className="absolute left-0 top-1/2 -translate-y-1/2 z-40 flex flex-col gap-2">
+                      <div className="fixed left-0 top-1/2 -translate-y-1/2 z-30 flex flex-col gap-2">
                         <button
                           onClick={() => setIsFileSystemOpen(true)}
-                          className="bg-gray-800 dark:bg-gray-900 text-white p-2 rounded-r-lg shadow-lg hover:bg-gray-700 dark:hover:bg-gray-800 transition-all hover:scale-105"
+                          className="bg-gray-800 dark:bg-gray-900 text-white p-2 rounded-r-lg shadow-lg hover:bg-gray-700 dark:hover:bg-gray-800 transition-all hover:scale-105 border-l-2 border-transparent hover:border-blue-500"
                           title="Abrir Sistema de Arquivos"
                           aria-label="Abrir Sistema de Arquivos"
                         >
@@ -669,7 +714,7 @@ export default function Home() {
                         </button>
                         <button
                           onClick={() => setIsPackageManagerOpen(true)}
-                          className="bg-gray-800 dark:bg-gray-900 text-white p-2 rounded-r-lg shadow-lg hover:bg-gray-700 dark:hover:bg-gray-800 transition-all hover:scale-105"
+                          className="bg-gray-800 dark:bg-gray-900 text-white p-2 rounded-r-lg shadow-lg hover:bg-gray-700 dark:hover:bg-gray-800 transition-all hover:scale-105 border-l-2 border-transparent hover:border-blue-500"
                           title="Abrir Gerenciador de Pacotes"
                           aria-label="Abrir Gerenciador de Pacotes"
                         >
@@ -692,17 +737,21 @@ export default function Home() {
                     {(layout === 'top' || layout === 'left') && (
                       <>
                         <Panel defaultSize={50} minSize={20} className="flex flex-col">
-                          <div className="h-full bg-white dark:bg-gray-900 rounded-lg shadow-lg border border-gray-200 dark:border-gray-800 overflow-hidden flex flex-col">
+                          <div className="h-full bg-white dark:bg-gray-900 rounded-lg shadow-lg border border-gray-200 dark:border-gray-800 overflow-hidden flex flex-col transition-smooth">
                             <div className="flex-1 min-h-0 flex flex-col">
-                              <OutputTerminal
-                                output={activeTab.output}
-                                isError={activeTab.hasError}
-                                isLoading={loading}
-                                isWaitingInput={isWaitingInput}
-                                inputPrompt={inputPrompt}
-                                onInputSubmit={onInputSubmit}
-                                plots={activeTab.plots}
-                              />
+                              {loading ? (
+                                <TerminalSkeleton />
+                              ) : (
+                                <OutputTerminal
+                                  output={activeTab.output}
+                                  isError={activeTab.hasError}
+                                  isLoading={false}
+                                  isWaitingInput={isWaitingInput}
+                                  inputPrompt={inputPrompt}
+                                  onInputSubmit={onInputSubmit}
+                                  plots={activeTab.plots}
+                                />
+                              )}
                             </div>
                           </div>
                         </Panel>
@@ -713,37 +762,43 @@ export default function Home() {
                         </Separator>
                       </>
                     )}
-                    <Panel defaultSize={50} minSize={20} className="flex flex-col">
-                      <div className="h-full bg-white dark:bg-gray-900 rounded-lg shadow-lg border border-gray-200 dark:border-gray-800 overflow-hidden flex flex-col">
-                        <EditorTabs
-                          tabs={tabs}
-                          activeTabId={activeTabId}
-                          onTabClick={setActiveTabId}
-                          onTabClose={closeTab}
-                          onNewTab={createNewTab}
-                          onImport={importCode}
-                          onExportCurrent={exportCurrentTab}
-                          onExportAll={exportAllTabs}
-                          onShare={shareCode}
-                          fontSize={fontSize}
-                          onFontSizeChange={handleFontSizeChange}
-                        />
-                        <div className="flex-1 min-h-0 overflow-hidden">
-                          <PythonEditor
-                            code={activeTab.code}
-                            onChange={(newCode) => {
-                              updateTabCode(activeTabId, newCode)
-                              setErrorLine(null)
-                            }}
-                            disabled={loading || isExecuting}
-                            fileName={activeTab.name}
-                            errorLine={errorLine}
-                            onRun={executeCode}
-                            fontSize={fontSize}
-                          />
-                        </div>
-                      </div>
-                    </Panel>
+                        <Panel defaultSize={50} minSize={20} className="flex flex-col">
+                          <div className="h-full bg-white dark:bg-gray-900 rounded-lg shadow-lg border border-gray-200 dark:border-gray-800 overflow-hidden flex flex-col transition-smooth">
+                            {loading ? (
+                              <EditorSkeleton />
+                            ) : (
+                              <>
+                                <EditorTabs
+                                  tabs={tabs}
+                                  activeTabId={activeTabId}
+                                  onTabClick={setActiveTabId}
+                                  onTabClose={closeTab}
+                                  onNewTab={createNewTab}
+                                  onImport={importCode}
+                                  onExportCurrent={exportCurrentTab}
+                                  onExportAll={exportAllTabs}
+                                  onShare={shareCode}
+                                  fontSize={fontSize}
+                                  onFontSizeChange={handleFontSizeChange}
+                                />
+                                <div className="flex-1 min-h-0 overflow-hidden">
+                                  <PythonEditor
+                                    code={activeTab.code}
+                                    onChange={(newCode) => {
+                                      updateTabCode(activeTabId, newCode)
+                                      setErrorLine(null)
+                                    }}
+                                    disabled={loading || isExecuting}
+                                    fileName={activeTab.name}
+                                    errorLine={errorLine}
+                                    onRun={executeCode}
+                                    fontSize={fontSize}
+                                  />
+                                </div>
+                              </>
+                            )}
+                          </div>
+                        </Panel>
                     {(layout === 'bottom' || layout === 'right') && (
                       <>
                         <Separator className="bg-transparent hover:bg-blue-400/20 dark:hover:bg-blue-600/20 transition-colors cursor-row-resize relative group">
@@ -752,17 +807,21 @@ export default function Home() {
                           </div>
                         </Separator>
                         <Panel defaultSize={50} minSize={20} className="flex flex-col">
-                          <div className="h-full bg-white dark:bg-gray-900 rounded-lg shadow-lg border border-gray-200 dark:border-gray-800 overflow-hidden flex flex-col">
+                          <div className="h-full bg-white dark:bg-gray-900 rounded-lg shadow-lg border border-gray-200 dark:border-gray-800 overflow-hidden flex flex-col transition-smooth">
                             <div className="flex-1 min-h-0 flex flex-col">
-                              <OutputTerminal
-                                output={activeTab.output}
-                                isError={activeTab.hasError}
-                                isLoading={loading}
-                                isWaitingInput={isWaitingInput}
-                                inputPrompt={inputPrompt}
-                                onInputSubmit={onInputSubmit}
-                                plots={activeTab.plots}
-                              />
+                              {loading ? (
+                                <TerminalSkeleton />
+                              ) : (
+                                <OutputTerminal
+                                  output={activeTab.output}
+                                  isError={activeTab.hasError}
+                                  isLoading={false}
+                                  isWaitingInput={isWaitingInput}
+                                  inputPrompt={inputPrompt}
+                                  onInputSubmit={onInputSubmit}
+                                  plots={activeTab.plots}
+                                />
+                              )}
                             </div>
                           </div>
                         </Panel>

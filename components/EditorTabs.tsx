@@ -32,7 +32,7 @@ export function EditorTabs({
   onFontSizeChange?: (size: number) => void
 }) {
   return (
-    <div className="flex items-center justify-between gap-1 px-2 bg-gray-50 dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 h-10 overflow-hidden flex-shrink-0 z-10 relative">
+    <div className="flex items-center justify-between gap-1 px-2 bg-gray-50 dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 h-10 overflow-hidden flex-shrink-0 relative">
       <div className="flex items-center gap-1 overflow-x-auto no-scrollbar h-full">
         {tabs.map((tab) => (
           <button
