@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useCallback, useEffect } from 'react'
+import { logger } from '@/utils/logger'
 
 export interface FileSystemEntry {
   name: string
@@ -93,7 +94,7 @@ export function useFileSystem({
             })
           } catch (e) {
             // Ignorar entradas que não podem ser acessadas
-            console.warn(`Erro ao acessar entrada ${entry}:`, e)
+            logger.warn(`Erro ao acessar entrada ${entry}:`, e)
           }
         }
 
@@ -106,7 +107,7 @@ export function useFileSystem({
 
         return result
       } catch (err) {
-        console.error('Erro ao listar arquivos:', err)
+        logger.error('Erro ao listar arquivos:', err)
         setError(err instanceof Error ? err.message : 'Erro ao listar arquivos')
         return []
       }

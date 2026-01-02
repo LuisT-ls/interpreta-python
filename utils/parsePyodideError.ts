@@ -1,3 +1,5 @@
+import { logger } from './logger'
+
 /**
  * Interface para o resultado do parsing de erros do Pyodide
  */
@@ -102,17 +104,17 @@ export function parsePyodideError(
   const lineMatchesArray = Array.from(allLineMatches)
 
   if (lineMatchesArray.length > 0) {
-    console.debug('🔍 Linhas encontradas no traceback:', lineMatchesArray.map(m => m[1]))
+    logger.debug('🔍 Linhas encontradas no traceback:', lineMatchesArray.map(m => m[1]))
 
     // Se houver múltiplas linhas no traceback, usar a última (mais próxima do erro)
     // A última linha geralmente é a linha dentro de _run_code onde o erro realmente ocorreu
     if (lineMatchesArray.length > 1) {
       // Pegar a última linha do traceback (mais próxima do erro)
       lineMatch = lineMatchesArray[lineMatchesArray.length - 1]
-      console.debug('✅ Múltiplas linhas no traceback, usando a última (mais próxima do erro):', lineMatch[1])
+      logger.debug('✅ Múltiplas linhas no traceback, usando a última (mais próxima do erro):', lineMatch[1])
     } else {
       lineMatch = lineMatchesArray[0]
-      console.debug('✅ Linha única no traceback:', lineMatch[1])
+      logger.debug('✅ Linha única no traceback:', lineMatch[1])
     }
   }
 
@@ -130,7 +132,7 @@ export function parsePyodideError(
     }
     if (indentationMatch) {
       lineMatch = indentationMatch
-      console.debug('✅ Linha extraída de IndentationError:', indentationMatch[1])
+      logger.debug('✅ Linha extraída de IndentationError:', indentationMatch[1])
     }
   }
 
@@ -172,14 +174,14 @@ export function parsePyodideError(
 
   // Debug: log para ajudar a identificar problemas
   if (!lineMatch) {
-    console.debug('⚠️ Não foi possível extrair linha do erro:', {
+    logger.debug('⚠️ Não foi possível extrair linha do erro:', {
       errorStr: cleanErrorStr.substring(0, 500),
       errorType: typeof error,
       errorKeys: error && typeof error === 'object' ? Object.keys(error) : null,
       fullError: error
     })
   } else {
-    console.debug('✅ Linha extraída do erro:', {
+    logger.debug('✅ Linha extraída do erro:', {
       lineNum: parseInt(lineMatch[1], 10),
       match: lineMatch[0],
       hasMapping: lineMapping !== undefined && lineMapping !== null && lineMapping.size > 0
@@ -188,7 +190,7 @@ export function parsePyodideError(
 
   if (lineMatch) {
     const lineNum = parseInt(lineMatch[1], 10)
-    console.debug('🔍 Tentando mapear linha do erro:', {
+    logger.debug('🔍 Tentando mapear linha do erro:', {
       lineNum,
       hasMapping: lineMapping !== undefined && lineMapping !== null && lineMapping.size > 0,
       mappingSize: lineMapping?.size || 0,
@@ -200,9 +202,9 @@ export function parsePyodideError(
       const mappedLine = lineMapping.get(lineNum)
       if (mappedLine !== undefined) {
         errorLine = mappedLine
-        console.debug('✅ Linha mapeada diretamente:', { lineNum, mappedLine })
+        logger.debug('✅ Linha mapeada diretamente:', { lineNum, mappedLine })
       } else {
-        console.debug('⚠️ Linha não encontrada no mapeamento direto, tentando linha mais próxima...')
+        logger.debug('⚠️ Linha não encontrada no mapeamento direto, tentando linha mais próxima...')
         // Tentar encontrar a linha mais próxima (dentro de 5 linhas)
         let closestLine: number | null = null
         let minDiff = Infinity
@@ -218,9 +220,9 @@ export function parsePyodideError(
         // Usar linha mais próxima se a diferença for pequena (≤5 linhas)
         if (closestLine !== null && minDiff <= 5) {
           errorLine = closestLine
-          console.debug('✅ Linha encontrada via linha mais próxima:', { lineNum, closestLine, minDiff })
+          logger.debug('✅ Linha encontrada via linha mais próxima:', { lineNum, closestLine, minDiff })
         } else {
-          console.debug('⚠️ Linha mais próxima muito distante, tentando cálculo direto...', { lineNum, closestLine, minDiff })
+          logger.debug('⚠️ Linha mais próxima muito distante, tentando cálculo direto...', { lineNum, closestLine, minDiff })
           // Fallback: calcular baseado na estrutura do código
           const codeLines = originalCode.split('\n')
           const importsCount = codeLines.filter(line => {
@@ -296,7 +298,7 @@ export function parsePyodideError(
                 // Esta é uma linha de código
                 if (codeLineCounter === codeLineIndex) {
                   errorLine = originalLineCounter
-                  console.debug('✅ Linha encontrada via fallback direto:', { codeLineIndex, originalLineCounter })
+                  logger.debug('✅ Linha encontrada via fallback direto:', { codeLineIndex, originalLineCounter })
                   break
                 }
 
@@ -308,7 +310,7 @@ export function parsePyodideError(
             // Último recurso: usar a linha diretamente se estiver no range
             if (!errorLine && lineNum > 0 && lineNum <= codeLines.length) {
               errorLine = lineNum
-              console.debug('⚠️ Usando linha diretamente como último recurso:', lineNum)
+              logger.debug('⚠️ Usando linha diretamente como último recurso:', lineNum)
             }
           }
         }

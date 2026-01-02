@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useCallback, useEffect } from 'react'
+import { logger } from '@/utils/logger'
 
 export interface MatplotlibPlot {
   id: string
@@ -49,7 +50,7 @@ export function useEditorTabs() {
           }))
         }
       } catch (e) {
-        console.error('Erro ao carregar abas do localStorage:', e)
+        logger.error('Erro ao carregar abas do localStorage:', e)
       }
     }
     return [
@@ -73,7 +74,7 @@ export function useEditorTabs() {
           return savedActiveId
         }
       } catch (e) {
-        console.error('Erro ao carregar aba ativa do localStorage:', e)
+        logger.error('Erro ao carregar aba ativa do localStorage:', e)
       }
     }
     return '1'
@@ -91,7 +92,7 @@ export function useEditorTabs() {
       try {
         localStorage.setItem('python-web-ide-tabs', JSON.stringify(tabs))
       } catch (e) {
-        console.error('Erro ao salvar abas no localStorage:', e)
+        logger.error('Erro ao salvar abas no localStorage:', e)
       }
     }
   }, [tabs, isMounted])
@@ -101,7 +102,7 @@ export function useEditorTabs() {
       try {
         localStorage.setItem('python-web-ide-active-tab', activeTabId)
       } catch (e) {
-        console.error('Erro ao salvar aba ativa no localStorage:', e)
+        logger.error('Erro ao salvar aba ativa no localStorage:', e)
       }
     }
   }, [activeTabId, isMounted])

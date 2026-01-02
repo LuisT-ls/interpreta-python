@@ -1,6 +1,7 @@
 'use client'
 
 import { useCallback, useRef } from 'react'
+import { logger } from '@/utils/logger'
 
 interface UseMatplotlibOptions {
   pyodide: any
@@ -109,7 +110,7 @@ builtins.render_plot_to_canvas = render_plot_to_canvas
 
       return true
     } catch (error) {
-      console.error('Erro ao inicializar matplotlib:', error)
+      logger.error('Erro ao inicializar matplotlib:', error)
       return false
     }
   }, [pyodide, loading])
@@ -183,7 +184,7 @@ plt.show = custom_show
 
       return true
     } catch (error) {
-      console.error('Erro ao inicializar matplotlib:', error)
+      logger.error('Erro ao inicializar matplotlib:', error)
       return false
     }
   }, [pyodide, loading])

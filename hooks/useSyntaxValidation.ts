@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect, useRef } from 'react'
+import { logger } from '@/utils/logger'
 
 interface UseSyntaxValidationOptions {
   pyodide: any
@@ -121,7 +122,7 @@ except Exception:
         // Se houver erro na validação, não fazer nada
         // Isso pode acontecer se o código tiver caracteres especiais problemáticos
         // Não definir erro para não confundir o usuário
-        console.debug('Erro na validação em tempo real:', err)
+        logger.debug('Erro na validação em tempo real:', err)
       }
     }, debounceMs)
 

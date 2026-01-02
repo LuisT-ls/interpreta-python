@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useRef, useCallback, useEffect } from 'react'
+import { logger } from '@/utils/logger'
 import JSZip from 'jszip'
 import { Panel, Group, Separator } from 'react-resizable-panels'
 import { usePyodide } from '@/hooks/usePyodide'
@@ -209,7 +210,7 @@ export default function Home() {
         } catch (err) {
           // Se o usuário cancelar, continuar com fallback
           if ((err as Error).name !== 'AbortError') {
-            console.error('Erro ao compartilhar:', err)
+            logger.error('Erro ao compartilhar:', err)
           }
         }
       }
@@ -219,7 +220,7 @@ export default function Home() {
       setShareNotification('URL copiada para a área de transferência!')
       setTimeout(() => setShareNotification(null), 3000)
     } catch (error) {
-      console.error('Erro ao compartilhar código:', error)
+      logger.error('Erro ao compartilhar código:', error)
       alert('Erro ao gerar URL de compartilhamento')
     }
   }, [activeTab.code, activeTab.name])

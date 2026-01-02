@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useRef } from 'react'
+import { logger } from '@/utils/logger'
 
 interface MatplotlibPlotProps {
   imageData: string // Base64 encoded PNG
@@ -34,7 +35,7 @@ export function MatplotlibPlot({ imageData, width, height, id }: MatplotlibPlotP
       ctx.drawImage(img, 0, 0, canvas.width, canvas.height)
     }
     img.onerror = (error) => {
-      console.error('Erro ao carregar imagem do gráfico:', error)
+      logger.error('Erro ao carregar imagem do gráfico:', error)
     }
     img.src = `data:image/png;base64,${imageData}`
   }, [imageData, width, height])

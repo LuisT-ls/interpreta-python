@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useCallback, useEffect } from 'react'
+import { logger } from '@/utils/logger'
 
 export interface InstalledPackage {
   name: string
@@ -159,7 +160,7 @@ json.dumps(packages[:50])  # Limitar a 50 para não sobrecarregar
         }
       }
     } catch (err) {
-      console.error('Erro ao listar pacotes:', err)
+      logger.error('Erro ao listar pacotes:', err)
       setError(err instanceof Error ? err.message : 'Erro ao listar pacotes')
       setInstalledPackages([])
     } finally {
@@ -191,7 +192,7 @@ await micropip.install('${packageName}')
       
       return true
     } catch (err: any) {
-      console.error('Erro ao instalar pacote:', err)
+      logger.error('Erro ao instalar pacote:', err)
       const errorMessage = err?.message || err?.toString() || 'Erro desconhecido ao instalar pacote'
       setError(errorMessage)
       return false
@@ -220,7 +221,7 @@ await micropip.install('${packageName}')
       
       return true
     } catch (err: any) {
-      console.error('Erro ao remover pacote:', err)
+      logger.error('Erro ao remover pacote:', err)
       setError(err?.message || 'Erro ao remover pacote')
       return false
     }

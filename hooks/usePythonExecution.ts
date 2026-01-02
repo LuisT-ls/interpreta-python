@@ -2,6 +2,7 @@
 
 import { useState, useRef, useCallback } from 'react'
 import { parsePyodideError } from '@/utils/parsePyodideError'
+import { logger } from '@/utils/logger'
 
 interface UsePythonExecutionOptions {
   pyodide: any
@@ -81,7 +82,7 @@ export function usePythonExecution({
         pyodide.setStdout({ batched: () => { } })
         pyodide.setStderr({ batched: () => { } })
       } catch (e) {
-        console.error('Erro ao limpar handlers:', e)
+        logger.error('Erro ao limpar handlers:', e)
       }
     }
 
@@ -185,7 +186,7 @@ plt.show = custom_show
           `)
         } catch (e) {
           // matplotlib pode não estar disponível, isso é ok
-          console.debug('Matplotlib não disponível ou erro ao configurar:', e)
+          logger.debug('Matplotlib não disponível ou erro ao configurar:', e)
         }
       }
       // Configurar captura de stdout e stderr
@@ -197,7 +198,7 @@ plt.show = custom_show
             updateTabOutput(activeTabId, currentOutput, false)
           }
         } catch (e) {
-          console.error('Erro no stdout handler:', e)
+          logger.error('Erro no stdout handler:', e)
         }
       }
 
@@ -212,7 +213,7 @@ plt.show = custom_show
             updateTabOutput(activeTabId, currentOutput, true)
           }
         } catch (e) {
-          console.error('Erro no stderr handler:', e)
+          logger.error('Erro no stderr handler:', e)
         }
       }
 
@@ -659,16 +660,16 @@ builtins.input = input
 
       const capturedOutput = outputBufferRef.current.join('')
 
-      console.log('=== ERRO CAPTURADO ===')
-      console.log('Erro:', err)
-      console.log('String do erro:', String(err))
-      console.log('Tipo do erro:', typeof err)
+      logger.debug('=== ERRO CAPTURADO ===')
+      logger.debug('Erro:', err)
+      logger.debug('String do erro:', String(err))
+      logger.debug('Tipo do erro:', typeof err)
       if (err && typeof err === 'object') {
-        console.log('Chaves do erro:', Object.keys(err))
-        console.log('Erro completo:', JSON.stringify(err, null, 2))
+        logger.debug('Chaves do erro:', Object.keys(err))
+        logger.debug('Erro completo:', JSON.stringify(err, null, 2))
       }
-      console.log('Mapeamento disponível:', Array.from(lineMappingRef.current.entries()))
-      console.log('=====================')
+      logger.debug('Mapeamento disponível:', Array.from(lineMappingRef.current.entries()))
+      logger.debug('=====================')
 
       const parsedError = parsePyodideError(
         err,
@@ -677,12 +678,12 @@ builtins.input = input
         lineMappingRef.current
       )
 
-      console.log('=== RESULTADO DO PARSING ===')
-      console.log('Tipo:', parsedError.type)
-      console.log('Linha:', parsedError.line)
-      console.log('Mensagem:', parsedError.message)
-      console.log('É erro de sintaxe:', parsedError.isSyntaxError)
-      console.log('===========================')
+      logger.debug('=== RESULTADO DO PARSING ===')
+      logger.debug('Tipo:', parsedError.type)
+      logger.debug('Linha:', parsedError.line)
+      logger.debug('Mensagem:', parsedError.message)
+      logger.debug('É erro de sintaxe:', parsedError.isSyntaxError)
+      logger.debug('===========================')
 
       setErrorLine(parsedError.line)
 

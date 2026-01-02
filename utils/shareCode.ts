@@ -1,4 +1,5 @@
 import pako from 'pako'
+import { logger } from './logger'
 
 /**
  * Codifica código Python para uma string base64 comprimida
@@ -20,7 +21,7 @@ export function encodeCode(code: string): string {
     // Codificar para URL-safe (substituir caracteres problemáticos)
     return encodeURIComponent(base64)
   } catch (error) {
-    console.error('Erro ao codificar código:', error)
+    logger.error('Erro ao codificar código:', error)
     // Fallback: usar apenas base64 sem compressão
     return encodeURIComponent(btoa(unescape(encodeURIComponent(code))))
   }
@@ -56,7 +57,7 @@ export function decodeCode(encoded: string): string | null {
       }
     }
   } catch (error) {
-    console.error('Erro ao decodificar código:', error)
+    logger.error('Erro ao decodificar código:', error)
     return null
   }
 }
