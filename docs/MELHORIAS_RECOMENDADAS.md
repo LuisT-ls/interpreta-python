@@ -190,14 +190,6 @@ const PackageManager = dynamic(() => import('@/components/PackageManager'), {
 
 ### 🔴 Alta Prioridade
 
-#### 15. **Feedback Visual Melhorado**
-**Impacto**: Alto | **Esforço**: Baixo
-
-**Solução**:
-- Adicionar skeleton loaders durante carregamento do Pyodide
-- Melhorar indicadores de progresso
-- Adicionar animações de transição suaves
-
 #### 16. **Sistema de Notificações**
 **Impacto**: Médio | **Esforço**: Baixo
 
@@ -229,7 +221,7 @@ const PackageManager = dynamic(() => import('@/components/PackageManager'), {
 **Solução**: Adicionar templates pré-definidos (ex: "Hello World", "Lista", "Função", "Matplotlib básico").
 
 #### 20. **Busca e Substituição no Editor**
-**Impacto**: Médio | **Esforço**: Médio
+**Impacto**: Médio | **Esforço**: Médionda
 
 **Solução**: Adicionar Ctrl+F para buscar e Ctrl+H para substituir no editor.
 

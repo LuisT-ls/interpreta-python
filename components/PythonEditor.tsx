@@ -1,6 +1,7 @@
 'use client'
 
-import { useRef, useEffect, useMemo } from 'react'
+import { useRef, useEffect, useMemo, useState, useCallback } from 'react'
+import { FindReplaceBar } from './FindReplaceBar'
 
 interface PythonEditorProps {
   code: string
@@ -222,6 +223,15 @@ export function PythonEditor({
 }: PythonEditorProps & { onRun?: () => void; fontSize?: number }) {
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const highlightRef = useRef<HTMLDivElement>(null)
+  
+  // Estados para busca e substituição
+  const [findReplaceMode, setFindReplaceMode] = useState<'find' | 'replace' | null>(null)
+  const [currentMatch, setCurrentMatch] = useState<{ index: number; count: number } | undefined>(undefined)
+  const [searchMatches, setSearchMatches] = useState<Array<{ index: number; length: number }>>([])
+  const [currentMatchIndex, setCurrentMatchIndex] = useState(0)
+  const [searchTerm, setSearchTerm] = useState('')
+  const [matchCase, setMatchCase] = useState(false)
+  const [wholeWord, setWholeWord] = useState(false)
 
   // Calcular line-height baseado no tamanho da fonte (1.5x)
   const lineHeight = Math.round(fontSize * 1.5)
@@ -258,15 +268,200 @@ export function PythonEditor({
     return () => textarea.removeEventListener('scroll', syncScroll)
   }, [code, fontSize, highlightedCode]) // Re-run quando código, fontSize ou highlighting mudar
 
+  // Função para scroll até a ocorrência (sem focar no textarea)
+  const scrollToMatch = useCallback((position: number, length: number) => {
+    const textarea = textareaRef.current
+    if (!textarea) return
+
+    // Calcular linha
+    const textBefore = code.substring(0, position)
+    const lines = textBefore.split('\n')
+    const lineNumber = lines.length - 1
+    const lineStart = textBefore.lastIndexOf('\n') + 1
+
+    // Scroll para a linha
+    const lineHeight = Math.round(fontSize * 1.5)
+    const padding = 16 // padding do textarea
+    const scrollTop = (lineNumber * lineHeight) + padding - 100 // 100px de margem
+    textarea.scrollTop = Math.max(0, scrollTop)
+
+    // Selecionar o texto encontrado (mas não focar no textarea)
+    // Usar setTimeout para garantir que o scroll aconteceu primeiro
+    setTimeout(() => {
+      if (textarea) {
+        textarea.setSelectionRange(position, position + length)
+      }
+    }, 0)
+  }, [code, fontSize])
+
+  // Função para buscar texto no código
+  const handleFind = useCallback((searchTerm: string, matchCase: boolean, wholeWord: boolean) => {
+    setSearchTerm(searchTerm)
+    setMatchCase(matchCase)
+    setWholeWord(wholeWord)
+    
+    if (!searchTerm) {
+      setSearchMatches([])
+      setCurrentMatch(undefined)
+      return
+    }
+
+    const flags = matchCase ? 'g' : 'gi'
+    let pattern = searchTerm.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+    
+    if (wholeWord) {
+      pattern = `\\b${pattern}\\b`
+    }
+
+    const regex = new RegExp(pattern, flags)
+    const matches: Array<{ index: number; length: number }> = []
+    let match: RegExpExecArray | null
+    const codeCopy = code // Criar cópia para evitar problemas com regex global
+
+    // Resetar regex para buscar do início
+    regex.lastIndex = 0
+    
+    while ((match = regex.exec(codeCopy)) !== null) {
+      matches.push({ index: match.index, length: match[0].length })
+      // Evitar loop infinito se regex não avançar
+      if (match.index === regex.lastIndex) {
+        regex.lastIndex++
+      }
+    }
+
+    setSearchMatches(matches)
+    
+    if (matches.length > 0) {
+      // Se o índice atual é maior que o número de matches, resetar para 0
+      const index = currentMatchIndex >= matches.length ? 0 : currentMatchIndex
+      setCurrentMatchIndex(index)
+      setCurrentMatch({ index: index + 1, count: matches.length })
+      
+      // Scroll para a ocorrência atual
+      scrollToMatch(matches[index].index, matches[index].length)
+    } else {
+      setCurrentMatch({ index: 0, count: 0 })
+      setCurrentMatchIndex(0)
+    }
+  }, [code, currentMatchIndex, scrollToMatch])
+
+  // Função para substituir texto
+  const handleReplace = useCallback((
+    searchTerm: string,
+    replaceTerm: string,
+    matchCase: boolean,
+    wholeWord: boolean,
+    replaceAll: boolean
+  ) => {
+    if (!searchTerm) return
+
+    const flags = matchCase ? 'g' : 'gi'
+    let pattern = searchTerm.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+    
+    if (wholeWord) {
+      pattern = `\\b${pattern}\\b`
+    }
+
+    const regex = new RegExp(pattern, flags)
+    let newCode = code
+
+    if (replaceAll) {
+      // Substituir todas as ocorrências
+      newCode = code.replace(regex, replaceTerm)
+      setCurrentMatchIndex(0)
+    } else {
+      // Substituir apenas a ocorrência atual
+      if (searchMatches.length > 0 && currentMatchIndex < searchMatches.length) {
+        const matchInfo = searchMatches[currentMatchIndex]
+        const matchIndex = matchInfo.index
+        const matchLength = matchInfo.length
+        
+        const before = code.substring(0, matchIndex)
+        const after = code.substring(matchIndex + matchLength)
+        newCode = before + replaceTerm + after
+        
+        // Ajustar índices das ocorrências após a substituição
+        const offset = replaceTerm.length - matchLength
+        const newMatches = searchMatches
+          .map((match, i) => {
+            if (i === currentMatchIndex) return null // Remover a ocorrência substituída
+            if (i > currentMatchIndex) {
+              return { index: match.index + offset, length: match.length } // Ajustar índices após
+            }
+            return match // Manter matches antes
+          })
+          .filter((match): match is { index: number; length: number } => match !== null)
+        
+        setSearchMatches(newMatches)
+        
+        // Ajustar índice atual
+        if (currentMatchIndex >= newMatches.length && newMatches.length > 0) {
+          setCurrentMatchIndex(newMatches.length - 1)
+        } else if (newMatches.length === 0) {
+          setCurrentMatchIndex(0)
+        }
+      }
+    }
+
+    onChange(newCode)
+    
+    // Rebuscar após substituição
+    if (searchTerm && newCode !== code) {
+      setTimeout(() => {
+        handleFind(searchTerm, matchCase, wholeWord)
+      }, 0)
+    }
+  }, [code, searchMatches, currentMatchIndex, onChange, handleFind])
+
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     const textarea = e.currentTarget
     const start = textarea.selectionStart
     const end = textarea.selectionEnd
 
+    // Atalho para busca (Ctrl + F ou Cmd + F)
+    if ((e.ctrlKey || e.metaKey) && e.key === 'f') {
+      e.preventDefault()
+      setFindReplaceMode('find')
+      return
+    }
+
+    // Atalho para substituir (Ctrl + H ou Cmd + H)
+    if ((e.ctrlKey || e.metaKey) && e.key === 'h') {
+      e.preventDefault()
+      setFindReplaceMode('replace')
+      return
+    }
+
     // Atalho para executar código (Ctrl + Enter ou Cmd + Enter)
     if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
       e.preventDefault()
       onRun?.()
+      return
+    }
+
+    // F3 ou Ctrl+G: próxima ocorrência
+    if (e.key === 'F3' || ((e.ctrlKey || e.metaKey) && e.key === 'g' && !e.shiftKey)) {
+      if (findReplaceMode && searchMatches.length > 0) {
+        e.preventDefault()
+        const nextIndex = (currentMatchIndex + 1) % searchMatches.length
+        setCurrentMatchIndex(nextIndex)
+        const matchInfo = searchMatches[nextIndex]
+        scrollToMatch(matchInfo.index, matchInfo.length)
+        setCurrentMatch({ index: nextIndex + 1, count: searchMatches.length })
+      }
+      return
+    }
+
+    // Shift+F3 ou Ctrl+Shift+G: ocorrência anterior
+    if ((e.shiftKey && e.key === 'F3') || ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key === 'g')) {
+      if (findReplaceMode && searchMatches.length > 0) {
+        e.preventDefault()
+        const prevIndex = currentMatchIndex === 0 ? searchMatches.length - 1 : currentMatchIndex - 1
+        setCurrentMatchIndex(prevIndex)
+        const matchInfo = searchMatches[prevIndex]
+        scrollToMatch(matchInfo.index, matchInfo.length)
+        setCurrentMatch({ index: prevIndex + 1, count: searchMatches.length })
+      }
       return
     }
 
@@ -480,6 +675,22 @@ export function PythonEditor({
 
   return (
     <div className="relative h-full flex flex-col">
+      {/* Barra de Busca/Substituição */}
+      {findReplaceMode && (
+        <FindReplaceBar
+          code={code}
+          onFind={handleFind}
+          onReplace={handleReplace}
+          onClose={() => {
+            setFindReplaceMode(null)
+            setSearchMatches([])
+            setCurrentMatch(undefined)
+            setCurrentMatchIndex(0)
+          }}
+          mode={findReplaceMode}
+          currentMatch={currentMatch}
+        />
+      )}
       <div className="flex-1 flex overflow-auto relative bg-gray-50 dark:bg-gray-900">
         {/* Números das linhas */}
         <div
@@ -511,7 +722,7 @@ export function PythonEditor({
           >
             {code ? (
               <div 
-                style={{ minHeight: '100%' }}
+                style={{ minHeight: '100%', position: 'relative' }}
                 dangerouslySetInnerHTML={{ 
                   __html: highlightedCode || code.replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/\n/g, '<br>') 
                 }} 
@@ -520,6 +731,50 @@ export function PythonEditor({
               <div className="text-gray-400 dark:text-gray-500 opacity-50">
                 Digite seu código Python aqui...
               </div>
+            )}
+            {/* Destaque visual das ocorrências de busca - dentro do overlay para sincronizar scroll */}
+            {findReplaceMode && searchMatches.length > 0 && searchTerm && (
+              <>
+                {searchMatches.map((matchInfo, idx) => {
+                  const matchIndex = matchInfo.index
+                  const length = matchInfo.length
+                  
+                  // Calcular posição do match
+                  const textBefore = code.substring(0, matchIndex)
+                  const lines = textBefore.split('\n')
+                  const lineNumber = lines.length - 1
+                  const lineStart = textBefore.lastIndexOf('\n') + 1
+                  const column = matchIndex - lineStart
+                  
+                  // Calcular posição visual (fonte monospace)
+                  // Para fonte monospace, usar medida mais precisa
+                  const charWidth = fontSize * 0.6 // Aproximação para fonte monospace
+                  const padding = 16
+                  const left = padding + (column * charWidth)
+                  const top = padding + (lineNumber * lineHeight)
+                  const width = Math.max(length * charWidth, charWidth)
+                  
+                  const isCurrentMatch = idx === currentMatchIndex
+                  
+                  return (
+                    <div
+                      key={`${matchIndex}-${idx}`}
+                      className={`absolute pointer-events-none rounded ${
+                        isCurrentMatch 
+                          ? 'bg-yellow-400 dark:bg-yellow-500/80 border-2 border-yellow-600 dark:border-yellow-400' 
+                          : 'bg-yellow-300/70 dark:bg-yellow-600/50'
+                      }`}
+                      style={{
+                        left: `${left}px`,
+                        top: `${top}px`,
+                        width: `${width}px`,
+                        height: `${lineHeight}px`,
+                        zIndex: 10,
+                      }}
+                    />
+                  )
+                })}
+              </>
             )}
           </div>
           {/* Textarea transparente para input */}
