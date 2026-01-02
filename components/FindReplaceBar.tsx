@@ -79,74 +79,92 @@ export function FindReplaceBar({
 
   return (
     <div className="absolute top-0 left-0 right-0 bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 shadow-lg z-50">
-      <div className="flex items-center gap-2 p-2">
-        {/* Campo de Busca */}
-        <div className="flex-1 flex items-center gap-2">
-          <div className="flex items-center gap-1 flex-1">
-            <svg
-              className="w-4 h-4 text-gray-500 dark:text-gray-400"
-              fill="none"
-              stroke="currentColor"
-              viewBox="0 0 24 24"
-            >
+      <div className="flex flex-col gap-2 p-3">
+        {/* Primeira linha: Busca */}
+        <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 flex-1 min-w-0">
+            <div className="flex items-center gap-1.5 flex-1 min-w-0">
+              <svg
+                className="w-4 h-4 text-gray-500 dark:text-gray-400 flex-shrink-0"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2}
+                  d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"
+                />
+              </svg>
+              <input
+                ref={searchInputRef}
+                type="text"
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                onKeyDown={(e) => handleKeyDown(e, 'search')}
+                placeholder="Buscar..."
+                className="flex-1 min-w-0 px-3 py-1.5 text-sm bg-gray-50 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 dark:text-gray-200"
+                autoFocus
+              />
+              {currentMatch && searchTerm && (
+                <span className="text-xs text-gray-500 dark:text-gray-400 whitespace-nowrap px-2 py-1 bg-gray-100 dark:bg-gray-600 rounded">
+                  {currentMatch.index > 0 ? `${currentMatch.index} de ` : ''}
+                  {currentMatch.count}
+                </span>
+              )}
+            </div>
+
+            {/* Opções de Busca */}
+            <div className="flex items-center gap-1 border-l border-gray-300 dark:border-gray-600 pl-2">
+              <button
+                onClick={() => setMatchCase(!matchCase)}
+                className={`px-2.5 py-1.5 text-xs font-medium rounded transition-colors ${
+                  matchCase
+                    ? 'bg-blue-500 text-white shadow-sm'
+                    : 'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600'
+                }`}
+                title="Diferenciar maiúsculas/minúsculas"
+              >
+                Aa
+              </button>
+              <button
+                onClick={() => setWholeWord(!wholeWord)}
+                className={`px-2.5 py-1.5 text-xs font-medium rounded transition-colors ${
+                  wholeWord
+                    ? 'bg-blue-500 text-white shadow-sm'
+                    : 'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600'
+                }`}
+                title="Palavra inteira"
+              >
+                Ab
+              </button>
+            </div>
+          </div>
+
+          {/* Botão Fechar */}
+          <button
+            onClick={onClose}
+            className="p-1.5 text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700 rounded transition-colors flex-shrink-0"
+            title="Fechar (Esc)"
+          >
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path
                 strokeLinecap="round"
                 strokeLinejoin="round"
                 strokeWidth={2}
-                d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"
+                d="M6 18L18 6M6 6l12 12"
               />
             </svg>
-            <input
-              ref={searchInputRef}
-              type="text"
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              onKeyDown={(e) => handleKeyDown(e, 'search')}
-              placeholder="Buscar..."
-              className="flex-1 px-2 py-1 text-sm bg-transparent border border-gray-300 dark:border-gray-600 rounded focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-700 dark:text-gray-200"
-              autoFocus
-            />
-            {currentMatch && searchTerm && (
-              <span className="text-xs text-gray-500 dark:text-gray-400 whitespace-nowrap">
-                {currentMatch.index > 0 ? `${currentMatch.index} de ` : ''}
-                {currentMatch.count}
-              </span>
-            )}
-          </div>
-
-          {/* Opções de Busca */}
-          <div className="flex items-center gap-1">
-            <button
-              onClick={() => setMatchCase(!matchCase)}
-              className={`px-2 py-1 text-xs rounded transition-colors ${
-                matchCase
-                  ? 'bg-blue-500 text-white'
-                  : 'bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-300 dark:hover:bg-gray-600'
-              }`}
-              title="Diferenciar maiúsculas/minúsculas"
-            >
-              Aa
-            </button>
-            <button
-              onClick={() => setWholeWord(!wholeWord)}
-              className={`px-2 py-1 text-xs rounded transition-colors ${
-                wholeWord
-                  ? 'bg-blue-500 text-white'
-                  : 'bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-300 dark:hover:bg-gray-600'
-              }`}
-              title="Palavra inteira"
-            >
-              Ab
-            </button>
-          </div>
+          </button>
         </div>
 
-        {/* Campo de Substituição (apenas no modo replace) */}
+        {/* Segunda linha: Substituição (apenas no modo replace) */}
         {mode === 'replace' && (
-          <div className="flex items-center gap-2 flex-1">
-            <div className="flex items-center gap-1 flex-1">
+          <div className="flex items-center gap-2">
+            <div className="flex items-center gap-1.5 flex-1 min-w-0">
               <svg
-                className="w-4 h-4 text-gray-500 dark:text-gray-400"
+                className="w-4 h-4 text-gray-500 dark:text-gray-400 flex-shrink-0"
                 fill="none"
                 stroke="currentColor"
                 viewBox="0 0 24 24"
@@ -165,43 +183,29 @@ export function FindReplaceBar({
                 onChange={(e) => setReplaceTerm(e.target.value)}
                 onKeyDown={(e) => handleKeyDown(e, 'replace')}
                 placeholder="Substituir por..."
-                className="flex-1 px-2 py-1 text-sm bg-transparent border border-gray-300 dark:border-gray-600 rounded focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-700 dark:text-gray-200"
+                className="flex-1 min-w-0 px-3 py-1.5 text-sm bg-gray-50 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 dark:text-gray-200"
               />
             </div>
 
             {/* Botões de Substituição */}
-            <button
-              onClick={() => handleReplace(false)}
-              disabled={!searchTerm}
-              className="px-3 py-1 text-sm bg-blue-500 hover:bg-blue-600 disabled:bg-gray-400 disabled:cursor-not-allowed text-white rounded transition-colors"
-            >
-              Substituir
-            </button>
-            <button
-              onClick={() => handleReplace(true)}
-              disabled={!searchTerm}
-              className="px-3 py-1 text-sm bg-blue-600 hover:bg-blue-700 disabled:bg-gray-400 disabled:cursor-not-allowed text-white rounded transition-colors"
-            >
-              Substituir Tudo
-            </button>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => handleReplace(false)}
+                disabled={!searchTerm}
+                className="px-4 py-1.5 text-sm font-medium bg-blue-500 hover:bg-blue-600 disabled:bg-gray-400 disabled:cursor-not-allowed disabled:opacity-50 text-white rounded-md transition-colors shadow-sm"
+              >
+                Substituir
+              </button>
+              <button
+                onClick={() => handleReplace(true)}
+                disabled={!searchTerm}
+                className="px-4 py-1.5 text-sm font-medium bg-blue-600 hover:bg-blue-700 disabled:bg-gray-400 disabled:cursor-not-allowed disabled:opacity-50 text-white rounded-md transition-colors shadow-sm"
+              >
+                Substituir Tudo
+              </button>
+            </div>
           </div>
         )}
-
-        {/* Botão Fechar */}
-        <button
-          onClick={onClose}
-          className="p-1 text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 rounded transition-colors"
-          title="Fechar (Esc)"
-        >
-          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              strokeWidth={2}
-              d="M6 18L18 6M6 6l12 12"
-            />
-          </svg>
-        </button>
       </div>
     </div>
   )
