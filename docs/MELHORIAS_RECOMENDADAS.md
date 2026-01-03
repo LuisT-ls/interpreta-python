@@ -252,20 +252,6 @@ const PackageManager = dynamic(() => import('@/components/PackageManager'), {
 - Adicionar rate limiting no cliente (opcional)
 
 **Arquivo**: `utils/shareCode.ts`
-
-#### 24. **Content Security Policy (CSP)**
-**Impacto**: Alto | **Esforço**: Médio
-
-**Solução**: Implementar CSP headers no Next.js para prevenir XSS.
-
-```typescript
-// next.config.js
-const securityHeaders = [
-  {
-    key: 'Content-Security-Policy',
-    value: "default-src 'self'; script-src 'self' 'unsafe-eval' https://cdn.jsdelivr.net; ..."
-  }
-]
 ```
 
 ### 🟡 Média Prioridade
