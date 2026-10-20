@@ -1,12 +1,14 @@
 'use client'
 
-import { useState, useRef } from 'react'
+import { useState, useRef, useEffect } from 'react'
 import { useFileSystem, FileSystemEntry } from '@/hooks/useFileSystem'
+import { useAccessibleDialog } from '@/hooks/useAccessibleDialog'
 
 interface FileSystemSidebarProps {
   pyodide: any
   loading: boolean
   isOpen: boolean
+  isModalDrawer?: boolean
   onToggle: () => void
   onFileSelect?: (path: string) => void
 }
@@ -15,6 +17,7 @@ export function FileSystemSidebar({
   pyodide,
   loading,
   isOpen,
+  isModalDrawer = false,
   onToggle,
   onFileSelect,
 }: FileSystemSidebarProps) {
@@ -39,6 +42,17 @@ export function FileSystemSidebar({
   const [renaming, setRenaming] = useState<string | null>(null)
   const [renameValue, setRenameValue] = useState('')
   const fileInputRef = useRef<HTMLInputElement>(null)
+  const sidebarRef = useRef<HTMLElement>(null)
+  useAccessibleDialog(isOpen && isModalDrawer, onToggle, sidebarRef)
+
+  useEffect(() => {
+    if (!isOpen || isModalDrawer) return
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') onToggle()
+    }
+    window.addEventListener('keydown', handleKeyDown)
+    return () => window.removeEventListener('keydown', handleKeyDown)
+  }, [isOpen, isModalDrawer, onToggle])
 
   const handleCreate = () => {
     if (!newName.trim()) return
@@ -95,7 +109,15 @@ export function FileSystemSidebar({
   }
 
   return (
-    <div className="w-64 bg-white dark:bg-gray-950 border-r border-gray-200 dark:border-gray-800 flex flex-col h-full shadow-sm">
+    <aside
+      ref={sidebarRef}
+      id="virtual-files-sidebar"
+      tabIndex={isModalDrawer ? -1 : undefined}
+      role={isModalDrawer ? 'dialog' : 'complementary'}
+      aria-modal={isModalDrawer ? true : undefined}
+      aria-label="Explorador de arquivos do Python"
+      className="flex h-full w-full flex-col border-r border-gray-200 bg-white shadow-sm dark:border-gray-800 dark:bg-gray-950"
+    >
       {/* Header */}
       <div className="flex items-center justify-between px-3 py-2.5 border-b border-gray-200 dark:border-gray-800 bg-gray-50/50 dark:bg-gray-900/50">
         <div className="flex items-center gap-2">
@@ -109,6 +131,7 @@ export function FileSystemSidebar({
           className="p-1 text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 rounded transition-colors"
           title="Fechar"
           aria-label="Fechar Sistema de Arquivos"
+          data-dialog-initial-focus={isModalDrawer ? true : undefined}
         >
           <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
@@ -173,6 +196,7 @@ export function FileSystemSidebar({
             onClick={navigateUp}
             className="hover:text-gray-900 dark:hover:text-gray-100 transition-colors"
             title="Diretório pai"
+            aria-label="Navegar para o diretório pai"
           >
             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
@@ -184,7 +208,7 @@ export function FileSystemSidebar({
 
       {/* Error message */}
       {error && (
-        <div className="px-3 py-1.5 text-xs text-red-600 dark:text-red-400 bg-red-50/50 dark:bg-red-900/10 border-b border-red-100 dark:border-red-900/30">
+        <div role="alert" className="px-3 py-1.5 text-xs text-red-600 dark:text-red-400 bg-red-50/50 dark:bg-red-900/10 border-b border-red-100 dark:border-red-900/30">
           {error}
         </div>
       )}
@@ -196,8 +220,8 @@ export function FileSystemSidebar({
             Carregando...
           </div>
         ) : files.length === 0 ? (
-          <div className="p-4 text-center text-xs text-gray-400 dark:text-gray-500">
-            Diretório vazio
+          <div className="m-3 rounded-lg border border-dashed border-gray-300 p-4 text-center text-xs text-gray-500 dark:border-gray-700 dark:text-gray-400" role="status">
+            Este diretório está vazio. Crie um arquivo ou envie um arquivo para começar.
           </div>
         ) : (
           <div className="py-1">
@@ -254,7 +278,7 @@ export function FileSystemSidebar({
                         </span>
                       )}
                     </button>
-                    <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
+                    <div className="flex items-center gap-0.5 opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100">
                       {!entry.isDirectory && (
                         <button
                           onClick={(e) => {
@@ -263,6 +287,7 @@ export function FileSystemSidebar({
                           }}
                           className="p-1 text-gray-400 dark:text-gray-500 hover:text-blue-600 dark:hover:text-blue-400 hover:bg-gray-100 dark:hover:bg-gray-800 rounded transition-colors"
                           title="Download"
+                          aria-label={`Baixar ${entry.name}`}
                         >
                           <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
@@ -276,6 +301,7 @@ export function FileSystemSidebar({
                         }}
                         className="p-1 text-gray-400 dark:text-gray-500 hover:text-yellow-600 dark:hover:text-yellow-400 hover:bg-gray-100 dark:hover:bg-gray-800 rounded transition-colors"
                         title="Renomear"
+                        aria-label={`Renomear ${entry.name}`}
                       >
                         <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
@@ -288,6 +314,7 @@ export function FileSystemSidebar({
                         }}
                         className="p-1 text-gray-400 dark:text-gray-500 hover:text-red-600 dark:hover:text-red-400 hover:bg-gray-100 dark:hover:bg-gray-800 rounded transition-colors"
                         title="Deletar"
+                        aria-label={`Deletar ${entry.name}`}
                       >
                         <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
@@ -326,6 +353,7 @@ export function FileSystemSidebar({
                 }}
                 className="p-1 text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 rounded transition-colors"
                 title="Fechar"
+                aria-label="Fechar criação de arquivo ou pasta"
               >
                 <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
@@ -374,6 +402,6 @@ export function FileSystemSidebar({
           </div>
         </div>
       )}
-    </div>
+    </aside>
   )
 }

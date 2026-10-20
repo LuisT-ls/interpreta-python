@@ -15,6 +15,15 @@ interface UsePythonExecutionOptions {
   setErrorLine: (line: number | null) => void
   addTabPlot?: (tabId: string, plot: { id: string; imageData: string; width: number; height: number; timestamp: number }) => void
   clearTabPlots?: (tabId: string) => void
+  preserveGlobals?: boolean
+  namespaceId?: string
+  onRunComplete?: (run: {
+    code: string
+    fileName: string
+    output: string
+    hasError: boolean
+    plots: Array<{ id: string; imageData: string; width: number; height: number; timestamp: number }>
+  }) => void
 }
 
 /**
@@ -32,6 +41,9 @@ export function usePythonExecution({
   setErrorLine,
   addTabPlot,
   clearTabPlots,
+  preserveGlobals = false,
+  namespaceId,
+  onRunComplete,
 }: UsePythonExecutionOptions) {
   const [isExecuting, setIsExecuting] = useState(false)
   const [isWaitingInput, setIsWaitingInput] = useState(false)
@@ -91,14 +103,18 @@ export function usePythonExecution({
     updateTabOutput(activeTabId, currentOutput + cancelMessage, false)
   }, [pyodide, activeTabId, currentOutput, updateTabOutput, addTabPlot, clearTabPlots])
 
-  const executeCode = useCallback(async () => {
+  const executeCode = useCallback(async (codeOverride?: string) => {
     if (!pyodide || loading || isExecuting) return
+
+    const sourceCode = codeOverride ?? code
+    const runPlots: Array<{ id: string; imageData: string; width: number; height: number; timestamp: number }> = []
 
     executionAbortedRef.current = false
     setIsExecuting(true)
     setErrorLine(null)
     updateTabOutput(activeTabId, '', false)
     outputBufferRef.current = []
+    lineMappingRef.current.clear()
     
     // Limpar plots anteriores
     if (clearTabPlots) {
@@ -115,13 +131,15 @@ export function usePythonExecution({
           width: number,
           height: number
         ) => {
-          addTabPlot(activeTabId, {
+          const plot = {
             id: plotId,
             imageData,
             width,
             height,
             timestamp: Date.now(),
-          })
+          }
+          runPlots.push(plot)
+          addTabPlot(activeTabId, plot)
         }
 
         // Inicializar contador de plots
@@ -303,7 +321,7 @@ builtins.input = input
       `)
 
       // Separar imports do resto do código
-      const lines = code.split('\n')
+      const lines = sourceCode.split('\n')
       const imports: string[] = []
       const codeLines: string[] = []
 
@@ -549,7 +567,9 @@ builtins.input = input
         originalLineNum++
       }
 
-      if (imports.length > 0) {
+      if (preserveGlobals) {
+        transformedLineNum = imports.length + 1
+      } else if (imports.length > 0) {
         transformedLineNum = imports.length + 1
         transformedLineNum++
       } else {
@@ -575,10 +595,17 @@ builtins.input = input
           return ''
         }
 
-        return '    ' + line
+        return `${preserveGlobals ? '        ' : '    '}${line}`
       }).join('\n')
 
-      const wrappedCode = `${importsCode}async def _run_code():\n${indentedCode}\n\n# Executar o código assíncrono\nawait _run_code()`
+      let wrappedCode: string
+      if (preserveGlobals) {
+        const notebookCode = [...imports, transformedCode].join('\n')
+        const namespaceName = JSON.stringify(namespaceId || activeTabId)
+        wrappedCode = `\nimport builtins as _workspace_builtins\nimport ast as _workspace_ast\n_workspace_namespaces = globals().setdefault('__workspace_namespaces', {})\n_workspace_namespace = _workspace_namespaces.setdefault(${namespaceName}, {'__builtins__': _workspace_builtins.__dict__})\n_workspace_namespace.update({key: globals()[key] for key in ('__js_request_input', '__js_stdout', '__js_stderr') if key in globals()})\n_workspace_compiled = compile(${JSON.stringify(notebookCode)}, ${JSON.stringify(fileName)}, 'exec', flags=_workspace_ast.PyCF_ALLOW_TOP_LEVEL_AWAIT)\n_workspace_result = eval(_workspace_compiled, _workspace_namespace, _workspace_namespace)\nif _workspace_result is not None:\n    await _workspace_result`
+      } else {
+        wrappedCode = `${importsCode}async def _run_code():\n${indentedCode}\n\n# Executar o código assíncrono\nawait _run_code()`
+      }
 
       if (executionAbortedRef.current) {
         updateTabOutput(activeTabId, '⚠️ Execução interrompida pelo usuário', false)
@@ -637,6 +664,13 @@ builtins.input = input
 
       setErrorLine(null)
       updateTabOutput(activeTabId, finalOutput || 'Código executado com sucesso!', false)
+      onRunComplete?.({
+        code: sourceCode,
+        fileName,
+        output: finalOutput || 'Código executado com sucesso!',
+        hasError: false,
+        plots: runPlots,
+      })
     } catch (err) {
       const errorStr = String(err)
       const isKeyboardInterrupt = errorStr.includes('KeyboardInterrupt')
@@ -673,7 +707,7 @@ builtins.input = input
 
       const parsedError = parsePyodideError(
         err,
-        code,
+        sourceCode,
         fileName,
         lineMappingRef.current
       )
@@ -697,6 +731,13 @@ builtins.input = input
       errorOutput += '\n** Process exited - Return Code: 1 **\n'
 
       updateTabOutput(activeTabId, errorOutput || 'Erro ao executar código', true)
+      onRunComplete?.({
+        code: sourceCode,
+        fileName,
+        output: errorOutput || 'Erro ao executar código',
+        hasError: true,
+        plots: runPlots,
+      })
     } finally {
       if (!executionAbortedRef.current) {
         setIsExecuting(false)
@@ -706,7 +747,7 @@ builtins.input = input
       inputResolveRef.current = null
       inputRejectRef.current = null
     }
-  }, [pyodide, loading, isExecuting, code, fileName, activeTabId, updateTabOutput, setErrorLine])
+  }, [pyodide, loading, isExecuting, code, fileName, activeTabId, updateTabOutput, setErrorLine, addTabPlot, clearTabPlots, preserveGlobals, namespaceId, onRunComplete])
 
   const onInputSubmit = useCallback((value: string) => {
     const promptText = inputPrompt || ''

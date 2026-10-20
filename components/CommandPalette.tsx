@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useState, useRef } from 'react'
+import { useAccessibleDialog } from '@/hooks/useAccessibleDialog'
 
 export interface Command {
   id: string
@@ -22,6 +23,8 @@ export function CommandPalette({ isOpen, onClose, commands }: CommandPaletteProp
   const [selectedIndex, setSelectedIndex] = useState(0)
   const inputRef = useRef<HTMLInputElement>(null)
   const listRef = useRef<HTMLDivElement>(null)
+  const dialogRef = useRef<HTMLDivElement>(null)
+  useAccessibleDialog(isOpen, onClose, dialogRef)
 
   // Filtrar comandos baseado na busca
   const filteredCommands = commands.filter((cmd) => {
@@ -37,12 +40,9 @@ export function CommandPalette({ isOpen, onClose, commands }: CommandPaletteProp
     setSelectedIndex(0)
   }, [searchQuery, isOpen])
 
-  // Focar no input quando abrir
+  // Limpar a consulta ao abrir a paleta.
   useEffect(() => {
     if (isOpen) {
-      setTimeout(() => {
-        inputRef.current?.focus()
-      }, 100)
       setSearchQuery('')
     }
   }, [isOpen])
@@ -68,9 +68,6 @@ export function CommandPalette({ isOpen, onClose, commands }: CommandPaletteProp
           filteredCommands[selectedIndex].action()
           onClose()
         }
-      } else if (e.key === 'Escape') {
-        e.preventDefault()
-        onClose()
       }
     }
 
@@ -94,16 +91,19 @@ export function CommandPalette({ isOpen, onClose, commands }: CommandPaletteProp
     <div
       className="fixed inset-0 z-50 flex items-start justify-center pt-[20vh]"
       onClick={onClose}
-      role="dialog"
-      aria-modal="true"
-      aria-label="Paleta de comandos"
+      role="presentation"
     >
       {/* Overlay */}
       <div className="fixed inset-0 bg-black/50 backdrop-blur-sm" aria-hidden="true" />
 
       {/* Modal */}
       <div
+        ref={dialogRef}
+        tabIndex={-1}
         className="relative w-full max-w-2xl mx-4 bg-white dark:bg-gray-900 rounded-lg shadow-2xl border border-gray-200 dark:border-gray-800 overflow-hidden"
+        role="dialog"
+        aria-modal="true"
+        aria-label="Paleta de comandos"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Input de busca */}
@@ -123,6 +123,7 @@ export function CommandPalette({ isOpen, onClose, commands }: CommandPaletteProp
           </svg>
           <input
             ref={inputRef}
+            data-dialog-initial-focus
             type="text"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}

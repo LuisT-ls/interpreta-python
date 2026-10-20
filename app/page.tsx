@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useRef, useCallback, useEffect } from 'react'
+import { useState, useRef, useCallback, useEffect, useMemo } from 'react'
 import { logger } from '@/utils/logger'
 import JSZip from 'jszip'
 import { Panel, Group, Separator } from 'react-resizable-panels'
@@ -23,6 +23,26 @@ import { FileSystemSidebar } from '@/components/FileSystemSidebar'
 import { FileEditor } from '@/components/FileEditor'
 import { PackageManager } from '@/components/PackageManager'
 import { LoadingScreen, EditorSkeleton, TerminalSkeleton } from '@/components/LoadingScreen'
+import { ActionToolbar } from '@/components/ActionToolbar'
+import { OnboardingModal } from '@/components/OnboardingModal'
+import { PersistenceNotice } from '@/components/PersistenceNotice'
+import { WorkspaceHub } from '@/components/WorkspaceHub'
+import { NotebookEditor } from '@/components/NotebookEditor'
+import { LearningPathModal, LEARNING_LESSONS, type LearningLesson } from '@/components/LearningPathModal'
+import { ExecutionHistoryModal } from '@/components/ExecutionHistoryModal'
+import { ResetWorkspaceDialog } from '@/components/ResetWorkspaceDialog'
+import { ResetEnvironmentDialog } from '@/components/ResetEnvironmentDialog'
+import { CloudSyncDialog } from '@/components/CloudSyncDialog'
+import { OfflineSupport } from '@/components/OfflineSupport'
+import { ToastViewport } from '@/components/ToastViewport'
+import { useProjectWorkspace } from '@/hooks/useProjectWorkspace'
+import { useToast } from '@/hooks/useToast'
+import { createProjectArchive, readProjectArchive } from '@/utils/projectArchive'
+import { restoreVirtualWorkspace, snapshotVirtualWorkspace } from '@/utils/virtualWorkspaceFs'
+import type { ExecutionRun, NotebookCell, VirtualWorkspaceFile, WorkspaceProject } from '@/utils/workspaceDb'
+import { saveWorkspaceProject } from '@/utils/workspaceDb'
+
+const ONBOARDING_STORAGE_KEY = 'python-web-ide-onboarding-completed'
 
 export default function Home() {
   const {
@@ -36,18 +56,185 @@ export default function Home() {
     updateTabOutput,
     addTabPlot,
     clearTabPlots,
+    replaceTabs,
   } = useEditorTabs()
+  const { layout, changeLayout, isMounted } = useLayout()
+  const [fontSize, setFontSize] = useState(14)
+  const [isCompactScreen, setIsCompactScreen] = useState(false)
+
+  useEffect(() => {
+    const mediaQuery = window.matchMedia('(max-width: 639px)')
+    const updateScreenSize = () => setIsCompactScreen(mediaQuery.matches)
+    updateScreenSize()
+    mediaQuery.addEventListener('change', updateScreenSize)
+    return () => mediaQuery.removeEventListener('change', updateScreenSize)
+  }, [])
+
+  const [workspaceMode, setWorkspaceMode] = useState<'script' | 'notebook'>('script')
+  const [notebookCells, setNotebookCells] = useState<NotebookCell[]>([])
+  const [executionHistory, setExecutionHistory] = useState<ExecutionRun[]>([])
+  const [completedLessons, setCompletedLessons] = useState<string[]>([])
+  const [workspacePackages, setWorkspacePackages] = useState<string[]>([])
+  const [backupFiles, setBackupFiles] = useState<VirtualWorkspaceFile[]>([])
+  const [lastBackupAt, setLastBackupAt] = useState<number | null>(null)
+  const [isLearningPathOpen, setIsLearningPathOpen] = useState(false)
+  const [isExecutionHistoryOpen, setIsExecutionHistoryOpen] = useState(false)
+  const [activeLessonId, setActiveLessonId] = useState<string | null>(null)
+  const activeCellIdRef = useRef<string | null>(null)
+  const workspaceModeRef = useRef(workspaceMode)
+  const pendingRestoreIdRef = useRef<string | null>(null)
+  const restoredProjectIdRef = useRef<string | null>(null)
+  const backupRunningRef = useRef(false)
+
+  useEffect(() => { workspaceModeRef.current = workspaceMode }, [workspaceMode])
+
+  const restoreProject = useCallback((project: import('@/utils/workspaceDb').WorkspaceProject) => {
+    replaceTabs(project.tabs, project.activeTabId)
+    setWorkspaceMode(project.mode)
+    changeLayout(project.settings.layout)
+    setFontSize(project.settings.fontSize)
+    setNotebookCells(project.cells)
+    setExecutionHistory(project.history)
+    setCompletedLessons(project.completedLessons)
+    setWorkspacePackages(project.packages)
+    setBackupFiles(project.backupFiles)
+    setLastBackupAt(project.lastBackupAt)
+    setActiveLessonId(null)
+    activeCellIdRef.current = project.cells[0]?.id ?? null
+    pendingRestoreIdRef.current = project.id
+    restoredProjectIdRef.current = null
+  }, [replaceTabs, changeLayout])
+
+  const workspaceDraft = useMemo(() => ({
+    tabs,
+    activeTabId,
+    mode: workspaceMode,
+    settings: { layout, fontSize },
+    cells: notebookCells,
+    history: executionHistory,
+    completedLessons,
+    packages: workspacePackages,
+    backupFiles,
+    lastBackupAt,
+  }), [tabs, activeTabId, workspaceMode, layout, fontSize, notebookCells, executionHistory, completedLessons, workspacePackages, backupFiles, lastBackupAt])
+  const projectWorkspace = useProjectWorkspace({ workspace: workspaceDraft, onRestore: restoreProject })
 
   const [isAboutModalOpen, setIsAboutModalOpen] = useState(false)
+  const [isCloudSyncOpen, setIsCloudSyncOpen] = useState(false)
+  const [isResetEnvironmentDialogOpen, setIsResetEnvironmentDialogOpen] = useState(false)
+  const [isResettingEnvironment, setIsResettingEnvironment] = useState(false)
+  const { toast, notify, dismiss: dismissToast } = useToast()
 
-  const { pyodide, loading, error, progress, stage } = usePyodide()
-  const { layout, changeLayout, isMounted } = useLayout()
+  const { pyodide, loading, error, progress, stage, retry } = usePyodide()
   const { isZenMode, toggleZenMode, isMounted: isZenMounted } = useZenMode()
+  const [backupError, setBackupError] = useState<string | null>(null)
+
+  useEffect(() => {
+    const projectId = pendingRestoreIdRef.current
+    if (!pyodide || loading || !projectWorkspace.isReady || !projectId || restoredProjectIdRef.current === projectId) return
+    try {
+      restoreVirtualWorkspace(pyodide, backupFiles)
+      restoredProjectIdRef.current = projectId
+      setBackupError(null)
+      if (isResettingEnvironment) {
+        setWorkspacePackages([])
+        setIsResettingEnvironment(false)
+        setIsResetEnvironmentDialogOpen(false)
+        setFileSystemRevision((revision) => revision + 1)
+        notify('Ambiente reiniciado. Código, histórico e arquivos do projeto foram preservados.')
+      }
+    } catch (restoreError) {
+      setBackupError(restoreError instanceof Error ? restoreError.message : 'Não foi possível restaurar os arquivos do projeto.')
+    }
+  }, [pyodide, loading, projectWorkspace.isReady, projectWorkspace.activeProjectId, backupFiles, isResettingEnvironment, notify])
+
+  useEffect(() => {
+    if (!error || !isResettingEnvironment) return
+    setIsResettingEnvironment(false)
+    setIsResetEnvironmentDialogOpen(false)
+    notify(`O runtime não reiniciou: ${error}`, 'error')
+  }, [error, isResettingEnvironment, notify])
+
+  const createWorkspaceBackup = useCallback(async () => {
+    if (!pyodide || loading || !projectWorkspace.isReady || !projectWorkspace.activeProject || backupRunningRef.current) return null
+    backupRunningRef.current = true
+    try {
+      const files = snapshotVirtualWorkspace(pyodide)
+      const timestamp = Date.now()
+      setBackupFiles(files)
+      setLastBackupAt(timestamp)
+      const latestProject = {
+        ...projectWorkspace.activeProject,
+        ...workspaceDraft,
+        backupFiles: files,
+        lastBackupAt: timestamp,
+        updatedAt: timestamp,
+      }
+      await saveWorkspaceProject(latestProject)
+      setBackupError(null)
+      return files
+    } catch (backupFailure) {
+      setBackupError(backupFailure instanceof Error ? backupFailure.message : 'Não foi possível criar o backup automático.')
+      return null
+    } finally {
+      backupRunningRef.current = false
+    }
+  }, [pyodide, loading, projectWorkspace.isReady, projectWorkspace.activeProject, workspaceDraft])
+
+  const getCurrentProjectForCloud = useCallback(async (): Promise<WorkspaceProject | null> => {
+    const current = await projectWorkspace.getCurrentProject()
+    if (!current) return null
+    if (!pyodide || loading) return current
+
+    const files = await createWorkspaceBackup()
+    if (!files) return null
+    const timestamp = Date.now()
+    return {
+      ...current,
+      ...workspaceDraft,
+      backupFiles: files,
+      lastBackupAt: timestamp,
+      updatedAt: timestamp,
+    }
+  }, [projectWorkspace.getCurrentProject, pyodide, loading, createWorkspaceBackup, workspaceDraft])
+
+  const deleteWorkspaceBackup = useCallback(async () => {
+    if (!projectWorkspace.activeProject) return
+    const updated = {
+      ...projectWorkspace.activeProject,
+      ...workspaceDraft,
+      backupFiles: [],
+      lastBackupAt: null,
+      updatedAt: Date.now(),
+    }
+    setBackupFiles([])
+    setLastBackupAt(null)
+    try {
+      await saveWorkspaceProject(updated)
+      setBackupError(null)
+    } catch (deleteError) {
+      setBackupError(deleteError instanceof Error ? deleteError.message : 'Não foi possível remover o backup salvo.')
+    }
+  }, [projectWorkspace.activeProject, workspaceDraft])
+
+  useEffect(() => {
+    if (!pyodide || loading || !projectWorkspace.isReady) return
+    const interval = window.setInterval(() => { void createWorkspaceBackup() }, 30_000)
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'hidden') void createWorkspaceBackup()
+    }
+    document.addEventListener('visibilitychange', handleVisibilityChange)
+    return () => {
+      window.clearInterval(interval)
+      document.removeEventListener('visibilitychange', handleVisibilityChange)
+    }
+  }, [pyodide, loading, projectWorkspace.isReady, createWorkspaceBackup])
 
   // Estado para controlar se deve mostrar o loading screen
   // Só mostra em hard reload (Shift + Reload) ou primeira carga
   const [showLoadingScreen, setShowLoadingScreen] = useState(true)
   const [isClient, setIsClient] = useState(false)
+  const [isOnboardingOpen, setIsOnboardingOpen] = useState(false)
 
   // Ajustar o estado após a hidratação no cliente
   useEffect(() => {
@@ -85,6 +272,60 @@ export default function Home() {
     }
   }, [loading, pyodide])
 
+  // Mantemos erros de runtime separados da validação de sintaxe. Assim, a
+  // validação automática que acontece após uma execução não apaga o destaque
+  // de um erro real ocorrido durante o runtime.
+  const [runtimeErrorLine, setRuntimeErrorLine] = useState<number | null>(null)
+  const setExecutionErrorLine = useCallback((line: number | null) => {
+    setRuntimeErrorLine(line)
+  }, [])
+
+  const activeNotebookCell = notebookCells.find((cell) => cell.id === activeCellIdRef.current) ?? notebookCells[0]
+  const updateExecutionOutput = useCallback((tabId: string, output: string, hasError: boolean) => {
+    if (workspaceModeRef.current === 'notebook') {
+      const cellId = activeCellIdRef.current
+      if (cellId) {
+        setNotebookCells((current) => current.map((cell) => cell.id === cellId ? { ...cell, output, hasError } : cell))
+      }
+      return
+    }
+    updateTabOutput(tabId, output, hasError)
+  }, [updateTabOutput])
+
+  const addExecutionPlot = useCallback((tabId: string, plot: { id: string; imageData: string; width: number; height: number; timestamp: number }) => {
+    if (workspaceModeRef.current === 'notebook' && activeCellIdRef.current) {
+      const cellId = activeCellIdRef.current
+      setNotebookCells((current) => current.map((cell) => cell.id === cellId ? { ...cell, plots: [...cell.plots, plot] } : cell))
+      return
+    }
+    addTabPlot(tabId, plot)
+  }, [addTabPlot])
+
+  const clearExecutionPlots = useCallback((tabId: string) => {
+    if (workspaceModeRef.current === 'notebook' && activeCellIdRef.current) {
+      const cellId = activeCellIdRef.current
+      setNotebookCells((current) => current.map((cell) => cell.id === cellId ? { ...cell, plots: [] } : cell))
+      return
+    }
+    clearTabPlots(tabId)
+  }, [clearTabPlots])
+
+  const recordExecution = useCallback((run: { code: string; fileName: string; output: string; hasError: boolean; plots: Array<{ id: string; imageData: string; width: number; height: number; timestamp: number }> }) => {
+    const entry: ExecutionRun = {
+      ...run,
+      id: crypto.randomUUID(),
+      tabId: activeTabId,
+      tabName: run.fileName || activeTab.name,
+      createdAt: Date.now(),
+    }
+    setExecutionHistory((current) => [entry, ...current].slice(0, 30))
+    const lesson = LEARNING_LESSONS.find((item) => item.id === activeLessonId)
+    if (lesson && !run.hasError && run.output.trim() === lesson.expectedOutput.trim()) {
+      projectWorkspace.addCompletedLesson(lesson.id)
+      setCompletedLessons((current) => current.includes(lesson.id) ? current : [...current, lesson.id])
+    }
+  }, [activeTabId, activeTab.name, activeLessonId, projectWorkspace.addCompletedLesson])
+
   // Execução de código Python
   const {
     executeCode,
@@ -99,15 +340,18 @@ export default function Home() {
     code: activeTab.code,
     fileName: activeTab.name,
     activeTabId,
-    currentOutput: activeTab.output,
-    updateTabOutput,
-    setErrorLine: () => {}, // Será definido pelo hook de validação
-    addTabPlot,
-    clearTabPlots,
+    currentOutput: workspaceMode === 'notebook' ? (activeNotebookCell?.output ?? '') : activeTab.output,
+    updateTabOutput: updateExecutionOutput,
+    setErrorLine: setExecutionErrorLine,
+    addTabPlot: addExecutionPlot,
+    clearTabPlots: clearExecutionPlots,
+    preserveGlobals: workspaceMode === 'notebook',
+    namespaceId: projectWorkspace.activeProjectId || activeTabId,
+    onRunComplete: recordExecution,
   })
 
   // Validação em tempo real de sintaxe
-  const { errorLine, setErrorLine } = useSyntaxValidation({
+  const { errorLine: syntaxErrorLine, setErrorLine: setSyntaxErrorLine } = useSyntaxValidation({
     pyodide,
     loading,
     isExecuting,
@@ -116,21 +360,80 @@ export default function Home() {
     debounceMs: 800,
   })
 
+  const errorLine = runtimeErrorLine ?? syntaxErrorLine
+  const clearErrorLine = useCallback(() => {
+    setRuntimeErrorLine(null)
+    setSyntaxErrorLine(null)
+  }, [setSyntaxErrorLine])
+
   // Referência para o input de arquivo (oculto)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
   // Estado para Command Palette
   const [isCommandPaletteOpen, setIsCommandPaletteOpen] = useState(false)
-
-  // Estado para notificação de compartilhamento
-  const [shareNotification, setShareNotification] = useState<string | null>(null)
+  const [errorFocusRequest, setErrorFocusRequest] = useState(0)
 
   // Estado para Sistema de Arquivos
   const [isFileSystemOpen, setIsFileSystemOpen] = useState(false)
+  const [fileSystemRevision, setFileSystemRevision] = useState(0)
   const [editingFilePath, setEditingFilePath] = useState<string | null>(null)
 
   // Estado para Gerenciador de Pacotes
   const [isPackageManagerOpen, setIsPackageManagerOpen] = useState(false)
+  const [isResetDialogOpen, setIsResetDialogOpen] = useState(false)
+  const [isResettingWorkspace, setIsResettingWorkspace] = useState(false)
+
+  const closeOnboarding = useCallback(() => {
+    setIsOnboardingOpen(false)
+    localStorage.setItem(ONBOARDING_STORAGE_KEY, 'true')
+  }, [])
+
+  const selectOnboardingExample = useCallback((exampleCode: string) => {
+    updateTabCode(activeTabId, exampleCode)
+    closeOnboarding()
+  }, [activeTabId, closeOnboarding, updateTabCode])
+
+  const focusErrorLine = useCallback(() => {
+    setErrorFocusRequest((current) => current + 1)
+  }, [])
+
+  const requestEnvironmentReset = useCallback(() => {
+    if (!pyodide || loading || isExecuting || !projectWorkspace.isReady || isResettingWorkspace) {
+      notify('Aguarde o ambiente Python ficar pronto antes de reiniciá-lo.', 'error')
+      return
+    }
+    setIsResetEnvironmentDialogOpen(true)
+  }, [pyodide, loading, isExecuting, projectWorkspace.isReady, isResettingWorkspace, notify])
+
+  const resetPythonEnvironment = useCallback(async () => {
+    if (!pyodide || loading || isExecuting || isResettingEnvironment) return
+    if (backupRunningRef.current) {
+      notify('Aguarde o backup automático terminar antes de reiniciar o ambiente.', 'error')
+      return
+    }
+
+    setIsResettingEnvironment(true)
+    try {
+      const files = await createWorkspaceBackup()
+      if (!files) throw new Error('Não foi possível criar um backup dos arquivos do projeto.')
+      pendingRestoreIdRef.current = projectWorkspace.activeProjectId
+      restoredProjectIdRef.current = null
+      clearErrorLine()
+      setIsPackageManagerOpen(false)
+      setIsResetEnvironmentDialogOpen(false)
+      retry()
+    } catch (resetError) {
+      setIsResettingEnvironment(false)
+      notify(resetError instanceof Error ? resetError.message : 'Não foi possível reiniciar o ambiente Python.', 'error')
+    }
+  }, [pyodide, loading, isExecuting, isResettingEnvironment, createWorkspaceBackup, projectWorkspace.activeProjectId, clearErrorLine, retry, notify])
+
+  // O onboarding não interrompe links de código compartilhado.
+  useEffect(() => {
+    if (localStorage.getItem(ONBOARDING_STORAGE_KEY) === 'true') return
+    if (getCodeFromUrl()) return
+    setIsOnboardingOpen(true)
+  }, [])
 
   // Função para exportar apenas a aba atual como arquivo .py
   const exportCurrentTab = useCallback(() => {
@@ -166,6 +469,97 @@ export default function Home() {
     URL.revokeObjectURL(url)
   }, [tabs])
 
+  const exportProject = useCallback(async () => {
+    try {
+      const project = await projectWorkspace.getCurrentProject()
+      if (!project) return
+      const latestFiles = await createWorkspaceBackup()
+      if (pyodide && !loading && !latestFiles) {
+        throw new Error(backupError ?? 'Não foi possível incluir um backup recente dos arquivos. Tente novamente em instantes.')
+      }
+      const completeProject = latestFiles
+        ? { ...project, backupFiles: latestFiles, lastBackupAt: Date.now() }
+        : project
+      const blob = await createProjectArchive(completeProject)
+      const url = URL.createObjectURL(blob)
+      const link = document.createElement('a')
+      link.href = url
+      link.download = `${project.name.trim().replace(/[^\w.-]+/g, '-') || 'projeto'}.zip`
+      document.body.appendChild(link)
+      link.click()
+      document.body.removeChild(link)
+      window.setTimeout(() => URL.revokeObjectURL(url), 1000)
+    } catch (exportError) {
+      notify(exportError instanceof Error ? exportError.message : 'Não foi possível exportar o projeto.', 'error')
+    }
+  }, [projectWorkspace.getCurrentProject, createWorkspaceBackup, pyodide, loading, backupError, notify])
+
+  const importProject = useCallback(async (file: File) => {
+    try {
+      const imported = await readProjectArchive(file)
+      const importedSuccessfully = await projectWorkspace.importProject(imported)
+      if (!importedSuccessfully) throw new Error('O navegador não conseguiu salvar o projeto importado.')
+      notify('Projeto importado com sucesso.')
+    } catch (importError) {
+      notify(importError instanceof Error ? importError.message : 'Não foi possível importar o projeto.', 'error')
+    }
+  }, [projectWorkspace.importProject, notify])
+
+  const changeWorkspaceMode = useCallback((mode: 'script' | 'notebook') => {
+    setActiveLessonId(null)
+    if (mode === 'notebook' && notebookCells.length === 0) {
+      const cell = { id: crypto.randomUUID(), code: activeTab.code, output: '', hasError: false, plots: [] }
+      setNotebookCells([cell])
+      activeCellIdRef.current = cell.id
+    }
+    if (mode === 'script' && workspaceMode === 'notebook') {
+      updateTabCode(activeTabId, notebookCells.map((cell) => cell.code).join('\n\n'))
+    }
+    setWorkspaceMode(mode)
+  }, [workspaceMode, notebookCells, activeTab.code, activeTabId, updateTabCode])
+
+  const runNotebookCell = useCallback((cellId: string, code: string) => {
+    activeCellIdRef.current = cellId
+    void executeCode(code)
+  }, [executeCode])
+
+  const selectNotebookCell = useCallback((cellId: string) => {
+    activeCellIdRef.current = cellId
+  }, [])
+
+  const runActiveEditor = useCallback(() => {
+    if (workspaceMode === 'notebook') {
+      const cell = notebookCells.find((item) => item.id === activeCellIdRef.current) ?? notebookCells[0]
+      if (cell) runNotebookCell(cell.id, cell.code)
+      return
+    }
+    void executeCode()
+  }, [workspaceMode, notebookCells, runNotebookCell, executeCode])
+
+  const openLearningLesson = useCallback((lesson: LearningLesson) => {
+    setWorkspaceMode('script')
+    setActiveLessonId(lesson.id)
+    updateTabCode(activeTabId, lesson.starterCode)
+    setIsLearningPathOpen(false)
+  }, [activeTabId, updateTabCode])
+
+  const restoreExecutionCode = useCallback((run: ExecutionRun) => {
+    const targetTab = tabs.find((tab) => tab.id === run.tabId)
+    if (targetTab) {
+      setActiveTabId(targetTab.id)
+      updateTabCode(targetTab.id, run.code)
+    } else {
+      updateTabCode(activeTabId, run.code)
+    }
+    setWorkspaceMode('script')
+    setActiveLessonId(null)
+    setIsExecutionHistoryOpen(false)
+  }, [tabs, activeTabId, setActiveTabId, updateTabCode])
+
+  const handlePackagesChanged = useCallback((packages: string[]) => {
+    setWorkspacePackages(packages)
+  }, [])
+
   // Função para importar código de um arquivo .py
   const importCode = () => {
     fileInputRef.current?.click()
@@ -178,7 +572,8 @@ export default function Home() {
 
     // Verificar se é um arquivo .py
     if (!file.name.endsWith('.py')) {
-      alert('Por favor, selecione um arquivo .py')
+      notify('Selecione um arquivo .py.', 'error')
+      event.target.value = ''
       return
     }
 
@@ -187,18 +582,17 @@ export default function Home() {
       const content = e.target?.result as string
       if (content) {
         updateTabCode(activeTabId, content)
+        notify(`Arquivo ${file.name} carregado.`)
       }
     }
     reader.onerror = () => {
-      alert('Erro ao ler o arquivo')
+      notify('Não foi possível ler o arquivo selecionado.', 'error')
     }
     reader.readAsText(file)
 
     // Limpar o input para permitir selecionar o mesmo arquivo novamente
     event.target.value = ''
   }
-
-  const [fontSize, setFontSize] = useState(14)
 
   useEffect(() => {
     // Carregar tamanho da fonte salvo
@@ -218,8 +612,94 @@ export default function Home() {
 
   // Função para limpar terminal
   const clearTerminal = useCallback(() => {
-    updateTabOutput(activeTabId, '', false)
-  }, [activeTabId, updateTabOutput])
+    if (workspaceMode === 'notebook' && activeNotebookCell) {
+      const cellId = activeNotebookCell.id
+      setNotebookCells((current) => current.map((cell) => cell.id === cellId
+        ? { ...cell, output: '', hasError: false, plots: [] }
+        : cell))
+    } else {
+      updateTabOutput(activeTabId, '', false)
+      clearTabPlots(activeTabId)
+    }
+    clearErrorLine()
+    notify('Saída do terminal limpa.')
+  }, [workspaceMode, activeNotebookCell, activeTabId, updateTabOutput, clearTabPlots, clearErrorLine, notify])
+
+  const resetWorkspace = useCallback(async () => {
+    if (!pyodide || loading || isExecuting || isResettingWorkspace) return
+    if (backupRunningRef.current) {
+      notify('Aguarde o backup automático terminar antes de limpar o workspace.', 'error')
+      return
+    }
+    setIsResettingWorkspace(true)
+
+    try {
+      restoreVirtualWorkspace(pyodide, [])
+      const namespaceId = JSON.stringify(projectWorkspace.activeProjectId || activeTabId)
+      pyodide.runPython(`globals().get('__workspace_namespaces', {}).pop(${namespaceId}, None)`)
+
+      const newTabId = crypto.randomUUID()
+      const newCellId = crypto.randomUUID()
+      const resetTabs = [{
+        id: newTabId,
+        name: 'editor.py',
+        code: '',
+        output: '',
+        hasError: false,
+        plots: [],
+      }]
+      const resetCells = [{ id: newCellId, code: '', output: '', hasError: false, plots: [] }]
+      replaceTabs(resetTabs, newTabId)
+      setNotebookCells(resetCells)
+      activeCellIdRef.current = newCellId
+      setWorkspaceMode('script')
+      setExecutionHistory([])
+      setCompletedLessons([])
+      setActiveLessonId(null)
+      setBackupFiles([])
+      setLastBackupAt(null)
+      setBackupError(null)
+      setFileSystemRevision((revision) => revision + 1)
+      clearErrorLine()
+
+      const activeProject = projectWorkspace.activeProject
+      if (activeProject) {
+        try {
+          await saveWorkspaceProject({
+            ...activeProject,
+            tabs: resetTabs,
+            activeTabId: newTabId,
+            mode: 'script',
+            cells: resetCells,
+            history: [],
+            completedLessons: [],
+            backupFiles: [],
+            lastBackupAt: null,
+            updatedAt: Date.now(),
+          })
+        } catch (storageFailure) {
+          const message = storageFailure instanceof Error ? storageFailure.message : 'falha ao salvar no IndexedDB.'
+          setBackupError(message)
+          notify(`Workspace limpo nesta sessão, mas não foi possível salvar a alteração: ${message}`, 'error')
+          return
+        }
+      }
+      notify('Workspace limpo. O runtime e os pacotes carregados foram mantidos.')
+    } catch (resetError) {
+      notify(resetError instanceof Error ? `Não foi possível limpar o workspace: ${resetError.message}` : 'Não foi possível limpar o workspace.', 'error')
+    } finally {
+      setIsResettingWorkspace(false)
+      setIsResetDialogOpen(false)
+    }
+  }, [pyodide, loading, isExecuting, isResettingWorkspace, projectWorkspace.activeProjectId, projectWorkspace.activeProject, activeTabId, replaceTabs, clearErrorLine, notify])
+
+  const requestWorkspaceReset = useCallback(() => {
+    if (isExecuting || loading || !pyodide || !projectWorkspace.isReady) {
+      notify('Aguarde o editor e o ambiente Python ficarem prontos antes de limpar o workspace.', 'error')
+      return
+    }
+    setIsResetDialogOpen(true)
+  }, [isExecuting, loading, pyodide, projectWorkspace.isReady, notify])
 
   // Função para formatar código (básico - indentação)
   const formatCode = useCallback(() => {
@@ -259,13 +739,12 @@ export default function Home() {
       
       // Fallback: copiar para clipboard
       await navigator.clipboard.writeText(shareUrl)
-      setShareNotification('URL copiada para a área de transferência!')
-      setTimeout(() => setShareNotification(null), 3000)
+      notify('URL copiada para a área de transferência!')
     } catch (error) {
       logger.error('Erro ao compartilhar código:', error)
-      alert('Erro ao gerar URL de compartilhamento')
+      notify('Não foi possível gerar ou copiar a URL de compartilhamento.', 'error')
     }
-  }, [activeTab.code, activeTab.name])
+  }, [activeTab.code, activeTab.name, notify])
 
   // Detectar código na URL ao carregar
   useEffect(() => {
@@ -306,10 +785,10 @@ export default function Home() {
     },
     {
       id: 'execute',
-      label: 'Executar Código',
-      description: 'Executar o código Python atual',
+      label: workspaceMode === 'notebook' ? 'Executar Célula Atual' : 'Executar Código',
+      description: workspaceMode === 'notebook' ? 'Executar a célula selecionada no notebook' : 'Executar o código Python atual',
       keywords: ['executar', 'run', 'executar código'],
-      action: executeCode,
+      action: runActiveEditor,
       icon: (
         <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z" />
@@ -342,6 +821,13 @@ export default function Home() {
       ),
     },
     {
+      id: 'reset-workspace',
+      label: 'Limpar workspace do projeto',
+      description: 'Apagar código, histórico e arquivos virtuais deste projeto',
+      keywords: ['reset', 'limpar workspace', 'apagar projeto'],
+      action: requestWorkspaceReset,
+    },
+    {
       id: 'zen-mode',
       label: isZenMode ? 'Sair do Modo Zen' : 'Modo Zen',
       description: isZenMode ? 'Sair do modo foco' : 'Focar apenas no editor',
@@ -366,6 +852,18 @@ export default function Home() {
       icon: (
         <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.368 2.684 3 3 0 00-5.368-2.684z" />
+        </svg>
+      ),
+    },
+    {
+      id: 'cloud-sync',
+      label: 'Conta e projetos na nuvem',
+      description: 'Entrar, salvar ou baixar uma cópia de projeto na nuvem',
+      keywords: ['conta', 'login', 'nuvem', 'cloud', 'sincronizar', 'backup'],
+      action: () => setIsCloudSyncOpen(true),
+      icon: (
+        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 18a4 4 0 01-.5-7.97A5.5 5.5 0 0117 8a4 4 0 01.5 7.97M12 12v9m0 0l-3-3m3 3l3-3" />
         </svg>
       ),
     },
@@ -398,6 +896,11 @@ export default function Home() {
   // Atalhos de teclado globais
   useEffect(() => {
     const handleGlobalKeyDown = (e: KeyboardEvent) => {
+      if (
+        isAboutModalOpen || isPackageManagerOpen || isResetDialogOpen || isResettingWorkspace || isResetEnvironmentDialogOpen || isResettingEnvironment || isCloudSyncOpen || Boolean(editingFilePath) ||
+        isLearningPathOpen || isExecutionHistoryOpen || isOnboardingOpen || isCommandPaletteOpen
+      ) return
+
       // Ctrl + P ou Cmd + P: Abrir Command Palette
       if ((e.ctrlKey || e.metaKey) && e.key === 'p' && !e.shiftKey) {
         e.preventDefault()
@@ -408,7 +911,7 @@ export default function Home() {
       // Ctrl + Enter ou F8: Executar código
       if (((e.ctrlKey || e.metaKey) && e.key === 'Enter') || e.key === 'F8') {
         e.preventDefault()
-        executeCode()
+        runActiveEditor()
         return
       }
 
@@ -429,11 +932,44 @@ export default function Home() {
 
     window.addEventListener('keydown', handleGlobalKeyDown)
     return () => window.removeEventListener('keydown', handleGlobalKeyDown)
-  }, [executeCode, isExecuting, stopExecution, isCommandPaletteOpen])
+  }, [runActiveEditor, isExecuting, stopExecution, isCommandPaletteOpen, isAboutModalOpen, isPackageManagerOpen, isResetDialogOpen, isResettingWorkspace, isResetEnvironmentDialogOpen, isResettingEnvironment, isCloudSyncOpen, editingFilePath, isLearningPathOpen, isExecutionHistoryOpen, isOnboardingOpen])
+
+  const terminalOutput = workspaceMode === 'notebook'
+    ? activeNotebookCell?.output ?? ''
+    : activeTab.output
+  const terminalHasError = workspaceMode === 'notebook'
+    ? activeNotebookCell?.hasError ?? false
+    : activeTab.hasError
+  const terminalPlots = workspaceMode === 'notebook'
+    ? activeNotebookCell?.plots ?? []
+    : activeTab.plots
+  const panelOrientation = isCompactScreen || layout === 'bottom' || layout === 'top'
+    ? 'vertical'
+    : 'horizontal'
 
   return (
     <div className={`min-h-screen bg-gray-50 dark:bg-gray-950 transition-colors ${isZenMode ? 'zen-mode' : ''}`}>
+      <OfflineSupport />
+      <OnboardingModal
+        isOpen={isOnboardingOpen}
+        onClose={closeOnboarding}
+        onSelectExample={selectOnboardingExample}
+      />
       <AboutModal isOpen={isAboutModalOpen} onClose={() => setIsAboutModalOpen(false)} />
+      <LearningPathModal
+        isOpen={isLearningPathOpen}
+        isBusy={isExecuting}
+        completedLessons={completedLessons}
+        onClose={() => setIsLearningPathOpen(false)}
+        onOpenLesson={openLearningLesson}
+      />
+      <ExecutionHistoryModal
+        isOpen={isExecutionHistoryOpen}
+        isBusy={isExecuting}
+        runs={executionHistory}
+        onClose={() => setIsExecutionHistoryOpen(false)}
+        onRestoreCode={restoreExecutionCode}
+      />
       <CommandPalette
         isOpen={isCommandPaletteOpen}
         onClose={() => setIsCommandPaletteOpen(false)}
@@ -450,16 +986,30 @@ export default function Home() {
         loading={loading}
         isOpen={isPackageManagerOpen}
         onClose={() => setIsPackageManagerOpen(false)}
+        onPackagesChanged={handlePackagesChanged}
+        onResetEnvironment={requestEnvironmentReset}
+        isResettingEnvironment={isResettingEnvironment}
       />
-      {/* Notificação de compartilhamento */}
-      {shareNotification && (
-        <div className="fixed bottom-6 right-6 z-50 bg-green-500 dark:bg-green-600 text-white px-4 py-3 rounded-lg shadow-lg flex items-center gap-3 animate-in slide-in-from-bottom-5">
-          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-          </svg>
-          <span>{shareNotification}</span>
-        </div>
-      )}
+      <ResetWorkspaceDialog
+        isOpen={isResetDialogOpen}
+        isBusy={isResettingWorkspace}
+        onCancel={() => { if (!isResettingWorkspace) setIsResetDialogOpen(false) }}
+        onConfirm={resetWorkspace}
+      />
+      <ResetEnvironmentDialog
+        isOpen={isResetEnvironmentDialogOpen}
+        isBusy={isResettingEnvironment}
+        onCancel={() => { if (!isResettingEnvironment) setIsResetEnvironmentDialogOpen(false) }}
+        onConfirm={resetPythonEnvironment}
+      />
+      <CloudSyncDialog
+        isOpen={isCloudSyncOpen}
+        onClose={() => setIsCloudSyncOpen(false)}
+        currentProject={projectWorkspace.activeProject}
+        getCurrentProject={getCurrentProjectForCloud}
+        onImportProject={projectWorkspace.importProject}
+      />
+      <ToastViewport toast={toast} onDismiss={dismissToast} />
       {/* Header */}
       {(!isZenMode || !isZenMounted) && (
         <header className="sticky top-0 z-50 bg-white/95 dark:bg-gray-900/95 backdrop-blur-md border-b border-gray-200/50 dark:border-gray-800/50 shadow-sm overflow-visible">
@@ -580,54 +1130,66 @@ export default function Home() {
               Erro ao carregar Pyodide: {error}
             </p>
             <p className="text-red-600 dark:text-red-300 text-sm mt-2">
-              Verifique sua conexão com a internet e tente recarregar a página.
+              Verifique sua conexão com a internet e tente carregar o ambiente novamente.
             </p>
+            <button
+              type="button"
+              onClick={retry}
+              className="mt-4 inline-flex items-center gap-2 rounded-lg bg-red-600 px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-2 dark:focus:ring-offset-gray-950"
+            >
+              <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" aria-hidden="true">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.5M20 12a8 8 0 00-15.5-3M20 20v-5h-.5M4 12a8 8 0 0015.5 3" />
+              </svg>
+              Tentar novamente
+            </button>
           </div>
         ) : (
           <div className={`space-y-4 transition-smooth ${isZenMode ? 'h-screen flex flex-col' : ''} ${loading ? 'opacity-0 pointer-events-none' : 'opacity-100'}`}>
-            {/* Execute and Stop Buttons */}
             {!isZenMode && (
-            <div className="flex justify-center items-center gap-3">
-              <button
-                onClick={executeCode}
-                disabled={loading || isExecuting || !pyodide}
-                className="px-8 py-3 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-400 disabled:cursor-not-allowed text-white font-semibold rounded-lg shadow-lg hover:shadow-xl transform hover:scale-105 transition-all duration-200 flex items-center gap-2"
-              >
-                {isExecuting ? (
-                  <>
-                    <svg className="animate-spin h-5 w-5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                    </svg>
-                    <span>Executando...</span>
-                  </>
-                ) : (
-                  <>
-                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z" />
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                    </svg>
-                    <span>Executar Código</span>
-                  </>
-                )}
-              </button>
-
-              {isExecuting && (
-                <button
-                  onClick={stopExecution}
-                  className="px-6 py-3 bg-red-600 hover:bg-red-700 text-white font-semibold rounded-lg shadow-lg hover:shadow-xl transform hover:scale-105 transition-all duration-200 flex items-center gap-2"
-                  title="Parar execução"
-                  aria-label="Parar execução do código"
-                >
-                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 10h6v4H9z" />
-                  </svg>
-                  <span>Parar</span>
-                </button>
-              )}
-            </div>
+              <WorkspaceHub
+                projects={projectWorkspace.projects}
+                activeProjectId={projectWorkspace.activeProjectId}
+                mode={workspaceMode}
+                isReady={projectWorkspace.isReady}
+                isBusy={isExecuting || isResettingWorkspace || isResettingEnvironment || loading || !pyodide || !projectWorkspace.isReady}
+                lastBackupAt={lastBackupAt}
+                packages={workspacePackages}
+                storageError={backupError ?? projectWorkspace.storageError}
+                onSelectProject={projectWorkspace.selectProject}
+                onCreateProject={projectWorkspace.createProject}
+                onDuplicateProject={projectWorkspace.duplicateProject}
+                onRenameProject={projectWorkspace.renameProject}
+                onDeleteProject={projectWorkspace.deleteProject}
+                onExportProject={exportProject}
+                onDeleteBackup={deleteWorkspaceBackup}
+                onImportProject={importProject}
+                onModeChange={changeWorkspaceMode}
+                onOpenLearning={() => setIsLearningPathOpen(true)}
+                onOpenHistory={() => setIsExecutionHistoryOpen(true)}
+                onResetWorkspace={requestWorkspaceReset}
+              />
             )}
+
+            {/* Ações principais */}
+            {!isZenMode && (
+              <ActionToolbar
+                onRun={runActiveEditor}
+                onStop={stopExecution}
+                onNewTab={createNewTab}
+                onImport={importCode}
+                onExport={exportCurrentTab}
+                onShare={shareCode}
+                onOpenCloud={() => setIsCloudSyncOpen(true)}
+                onToggleFiles={() => setIsFileSystemOpen((open) => !open)}
+                onOpenPackages={() => setIsPackageManagerOpen(true)}
+                onOpenCommandPalette={() => setIsCommandPaletteOpen(true)}
+                isExecuting={isExecuting}
+                isDisabled={loading || !pyodide || isResettingWorkspace}
+                isFileSystemOpen={isFileSystemOpen}
+              />
+            )}
+
+            {!isZenMode && !loading && <PersistenceNotice onExport={exportCurrentTab} />}
 
             {/* Layout dinâmico baseado na escolha do usuário com painéis redimensionáveis */}
             {isMounted && (
@@ -652,19 +1214,32 @@ export default function Home() {
                           fontSize={fontSize}
                           onFontSizeChange={handleFontSizeChange}
                         />
-                        <div className="flex-1 h-full">
-                          <PythonEditor
-                            code={activeTab.code}
-                            onChange={(newCode) => {
-                              updateTabCode(activeTabId, newCode)
-                              setErrorLine(null)
-                            }}
-                            disabled={loading || isExecuting}
-                            fileName={activeTab.name}
-                            errorLine={errorLine}
-                            onRun={executeCode}
-                            fontSize={fontSize}
-                          />
+                        <div className="flex-1 h-full min-h-0">
+                          {workspaceMode === 'notebook' ? (
+                            <NotebookEditor
+                              cells={notebookCells}
+                              onChange={setNotebookCells}
+                              onRunCell={runNotebookCell}
+                              onSelectCell={selectNotebookCell}
+                              isExecuting={isExecuting}
+                              isDisabled={loading || !pyodide || isResettingWorkspace}
+                              fontSize={fontSize}
+                            />
+                          ) : (
+                            <PythonEditor
+                              code={activeTab.code}
+                              onChange={(newCode) => {
+                                updateTabCode(activeTabId, newCode)
+                                clearErrorLine()
+                              }}
+                              disabled={loading || isExecuting}
+                              fileName={activeTab.name}
+                              errorLine={errorLine}
+                              errorFocusRequest={errorFocusRequest}
+                              onRun={executeCode}
+                              fontSize={fontSize}
+                            />
+                          )}
                         </div>
                       </>
                     )}
@@ -686,18 +1261,28 @@ export default function Home() {
                   </div>
                 ) : (
                   // Layout normal com painéis redimensionáveis
-                  <div className="flex h-[calc(100vh-12rem)] min-h-[600px] w-full gap-0">
+                  <div className="flex h-[calc(100dvh-14rem)] min-h-[360px] w-full gap-0 sm:min-h-[480px] lg:min-h-[600px]">
                     {/* FileSystem Sidebar */}
                     {isFileSystemOpen && (
-                      <div className="flex-shrink-0 border-r border-gray-200 dark:border-gray-800">
-                        <FileSystemSidebar
-                          pyodide={pyodide}
-                          loading={loading}
-                          isOpen={true}
-                          onToggle={() => setIsFileSystemOpen(false)}
-                          onFileSelect={(path) => setEditingFilePath(path)}
+                      <>
+                        <button
+                          type="button"
+                          className="fixed inset-0 z-30 bg-black/40 md:hidden"
+                          onClick={() => setIsFileSystemOpen(false)}
+                          aria-label="Fechar explorador de arquivos"
                         />
-                      </div>
+                        <div className="fixed inset-y-0 left-0 z-40 w-64 bg-white pt-16 shadow-xl dark:bg-gray-950 md:relative md:inset-auto md:z-auto md:shrink-0 md:pt-0 md:shadow-none">
+                          <FileSystemSidebar
+                            key={fileSystemRevision}
+                            pyodide={pyodide}
+                            loading={loading}
+                            isOpen={true}
+                            isModalDrawer={isCompactScreen}
+                            onToggle={() => setIsFileSystemOpen(false)}
+                            onFileSelect={(path) => setEditingFilePath(path)}
+                          />
+                        </div>
+                      </>
                     )}
                     {/* Botões fixos na parede esquerda para Sistema de Arquivos e Gerenciador de Pacotes */}
                     {!isFileSystemOpen && (
@@ -731,7 +1316,7 @@ export default function Home() {
                       </div>
                     )}
                     <Group
-                      orientation={layout === 'bottom' || layout === 'top' ? 'vertical' : 'horizontal'}
+                      orientation={panelOrientation}
                       className="flex-1"
                     >
                     {(layout === 'top' || layout === 'left') && (
@@ -743,19 +1328,23 @@ export default function Home() {
                                 <TerminalSkeleton />
                               ) : (
                                 <OutputTerminal
-                                  output={activeTab.output}
-                                  isError={activeTab.hasError}
+                                  output={terminalOutput}
+                                  isError={terminalHasError}
+                                  errorLine={errorLine}
                                   isLoading={false}
                                   isWaitingInput={isWaitingInput}
                                   inputPrompt={inputPrompt}
                                   onInputSubmit={onInputSubmit}
-                                  plots={activeTab.plots}
+                                  onGoToError={focusErrorLine}
+                                  onClear={clearTerminal}
+                                  onNotify={notify}
+                                  plots={terminalPlots}
                                 />
                               )}
                             </div>
                           </div>
                         </Panel>
-                        <Separator className="bg-transparent hover:bg-blue-400/20 dark:hover:bg-blue-600/20 transition-colors cursor-col-resize relative group">
+                        <Separator className={`bg-transparent hover:bg-blue-400/20 dark:hover:bg-blue-600/20 transition-colors ${panelOrientation === 'vertical' ? 'cursor-row-resize' : 'cursor-col-resize'} relative group`}>
                           <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
                             <div className="w-0.5 h-full bg-gray-300 dark:bg-gray-700 group-hover:bg-blue-500 dark:group-hover:bg-blue-400 transition-colors" />
                           </div>
@@ -782,18 +1371,31 @@ export default function Home() {
                                   onFontSizeChange={handleFontSizeChange}
                                 />
                                 <div className="flex-1 min-h-0 overflow-hidden">
-                                  <PythonEditor
-                                    code={activeTab.code}
-                                    onChange={(newCode) => {
-                                      updateTabCode(activeTabId, newCode)
-                                      setErrorLine(null)
-                                    }}
-                                    disabled={loading || isExecuting}
-                                    fileName={activeTab.name}
-                                    errorLine={errorLine}
-                                    onRun={executeCode}
-                                    fontSize={fontSize}
-                                  />
+                                  {workspaceMode === 'notebook' ? (
+                                    <NotebookEditor
+                                      cells={notebookCells}
+                                      onChange={setNotebookCells}
+                                      onRunCell={runNotebookCell}
+                                      onSelectCell={selectNotebookCell}
+                                      isExecuting={isExecuting}
+                                      isDisabled={loading || !pyodide}
+                                      fontSize={fontSize}
+                                    />
+                                  ) : (
+                                    <PythonEditor
+                                      code={activeTab.code}
+                                      onChange={(newCode) => {
+                                        updateTabCode(activeTabId, newCode)
+                                        clearErrorLine()
+                                      }}
+                                      disabled={loading || isExecuting}
+                                      fileName={activeTab.name}
+                                      errorLine={errorLine}
+                                      errorFocusRequest={errorFocusRequest}
+                                      onRun={executeCode}
+                                      fontSize={fontSize}
+                                    />
+                                  )}
                                 </div>
                               </>
                             )}
@@ -801,7 +1403,7 @@ export default function Home() {
                         </Panel>
                     {(layout === 'bottom' || layout === 'right') && (
                       <>
-                        <Separator className="bg-transparent hover:bg-blue-400/20 dark:hover:bg-blue-600/20 transition-colors cursor-row-resize relative group">
+                        <Separator className={`bg-transparent hover:bg-blue-400/20 dark:hover:bg-blue-600/20 transition-colors ${panelOrientation === 'vertical' ? 'cursor-row-resize' : 'cursor-col-resize'} relative group`}>
                           <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
                             <div className="h-0.5 w-full bg-gray-300 dark:bg-gray-700 group-hover:bg-blue-500 dark:group-hover:bg-blue-400 transition-colors" />
                           </div>
@@ -813,13 +1415,17 @@ export default function Home() {
                                 <TerminalSkeleton />
                               ) : (
                                 <OutputTerminal
-                                  output={activeTab.output}
-                                  isError={activeTab.hasError}
+                                  output={terminalOutput}
+                                  isError={terminalHasError}
+                                  errorLine={errorLine}
                                   isLoading={false}
                                   isWaitingInput={isWaitingInput}
                                   inputPrompt={inputPrompt}
                                   onInputSubmit={onInputSubmit}
-                                  plots={activeTab.plots}
+                                  onGoToError={focusErrorLine}
+                                  onClear={clearTerminal}
+                                  onNotify={notify}
+                                  plots={terminalPlots}
                                 />
                               )}
                             </div>

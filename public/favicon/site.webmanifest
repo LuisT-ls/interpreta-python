@@ -1,6 +1,8 @@
 {
   "name": "Interpretador Python Web",
   "short_name": "Python Web",
+  "start_url": "/",
+  "scope": "/",
   "icons": [
     {
       "src": "/favicon/android-chrome-192x192.png",
@@ -15,5 +17,6 @@
   ],
   "theme_color": "#ffffff",
   "background_color": "#ffffff",
-  "display": "standalone"
+  "display": "standalone",
+  "orientation": "any"
 }

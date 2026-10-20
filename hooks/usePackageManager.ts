@@ -202,7 +202,7 @@ await micropip.install('${packageName}')
   }, [pyodide, loading, isInstalling, refreshInstalledPackages])
 
   /**
-   * Remove um pacote (não suportado diretamente pelo micropip, mas podemos tentar)
+   * Oculta um pacote na lista local. O Pyodide não desinstala módulos em runtime.
    */
   const uninstallPackage = useCallback(async (packageName: string): Promise<boolean> => {
     if (!pyodide || loading) return false
@@ -210,14 +210,9 @@ await micropip.install('${packageName}')
     setError(null)
 
     try {
-      // Nota: micropip não suporta desinstalação direta
-      // Podemos apenas remover da lista visual
-      // Em uma implementação real, seria necessário reinicializar o Pyodide
-      
+      // Remover da lista é apenas visual; o módulo segue carregado no runtime.
       setInstalledPackages((prev) => prev.filter((pkg) => pkg.name !== packageName))
-      
-      // Mostrar aviso ao usuário
-      setError(`Pacote ${packageName} removido da lista. Para remover completamente, recarregue a página.`)
+      setError(`${packageName} foi ocultado da lista, mas continua disponível no ambiente Python. Atualizar a lista pode exibi-lo novamente.`)
       
       return true
     } catch (err: any) {

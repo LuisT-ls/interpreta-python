@@ -1,4 +1,5 @@
-import { useEffect, useRef } from 'react'
+import { useRef } from 'react'
+import { useAccessibleDialog } from '@/hooks/useAccessibleDialog'
 
 interface AboutModalProps {
     isOpen: boolean
@@ -7,52 +8,23 @@ interface AboutModalProps {
 
 export function AboutModal({ isOpen, onClose }: AboutModalProps) {
     const modalRef = useRef<HTMLDivElement>(null)
-
-    // Fechar ao clicar fora do modal
-    useEffect(() => {
-        const handleMouseDown = (event: MouseEvent) => {
-            if (modalRef.current && !modalRef.current.contains(event.target as Node)) {
-                onClose()
-            }
-        }
-
-        if (isOpen) {
-            document.addEventListener('mousedown', handleMouseDown)
-        }
-
-        return () => {
-            document.removeEventListener('mousedown', handleMouseDown)
-        }
-    }, [isOpen, onClose])
-
-    // Fechar com a tecla ESC
-    useEffect(() => {
-        const handleKeyDown = (event: KeyboardEvent) => {
-            if (event.key === 'Escape') {
-                onClose()
-            }
-        }
-
-        if (isOpen) {
-            document.addEventListener('keydown', handleKeyDown)
-        }
-
-        return () => {
-            document.removeEventListener('keydown', handleKeyDown)
-        }
-    }, [isOpen, onClose])
+    useAccessibleDialog(isOpen, onClose, modalRef)
 
     if (!isOpen) return null
 
     return (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose() }}>
             <div
                 ref={modalRef}
+                tabIndex={-1}
+                role="dialog"
+                aria-modal="true"
+                aria-labelledby="about-modal-title"
                 className="bg-white dark:bg-gray-800 rounded-lg shadow-xl w-full max-w-2xl max-h-[90vh] overflow-y-auto flex flex-col"
             >
                 {/* Cabeçalho */}
                 <div className="flex items-center justify-between p-6 border-b border-gray-200 dark:border-gray-700">
-                    <h2 className="text-2xl font-bold text-gray-900 dark:text-gray-100">
+                    <h2 id="about-modal-title" className="text-2xl font-bold text-gray-900 dark:text-gray-100">
                         Sobre o Interpreta Python
                     </h2>
                     <button
@@ -76,7 +48,7 @@ export function AboutModal({ isOpen, onClose }: AboutModalProps) {
                             O IDE Python Online é uma ferramenta baseada na web que permite aprender, construir, executar e testar seus scripts Python diretamente no navegador.
                             Você pode escrever código, ver a saída instantaneamente e exportar seus projetos.
                             Todo o processamento é feito localmente no seu navegador usando WebAssembly (Pyodide), garantindo velocidade e privacidade.
-                            Versão do Python suportada: Python 3.11+ (via Pyodide).
+                            Ambiente Python 3.12 executado localmente no navegador via Pyodide.
                         </p>
                     </section>
 
@@ -119,7 +91,7 @@ export function AboutModal({ isOpen, onClose }: AboutModalProps) {
                         </h3>
                         <p className="leading-relaxed">
                             <strong>Nenhum código é enviado para servidores externos para execução.</strong> Todo o código é executado localmente no seu navegador.
-                            O código permanece no seu dispositivo a menos que você escolha exportá-lo explicitamente.
+                            Projetos são salvos no armazenamento local do navegador (IndexedDB). O código só sai do dispositivo se você optar por exportá-lo ou compartilhá-lo.
                         </p>
                     </section>
                 </div>

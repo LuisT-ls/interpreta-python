@@ -1,9 +1,10 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 
 interface EmscriptenFS {
   readdir: (path: string) => string[]
+  isDir: (mode: number) => boolean
   writeFile: (path: string, data: string | Uint8Array, options?: { encoding?: string }) => void
   readFile: (path: string, options?: { encoding?: string }) => string | Uint8Array
   mkdir: (path: string, mode?: number) => void
@@ -37,12 +38,25 @@ export function usePyodide() {
   const [error, setError] = useState<string | null>(null)
   const [progress, setProgress] = useState(0)
   const [stage, setStage] = useState('Inicializando...')
+  const [loadRequest, setLoadRequest] = useState(0)
+
+  const retry = useCallback(() => {
+    setPyodide(null)
+    setError(null)
+    setLoading(true)
+    setProgress(0)
+    setStage('Tentando novamente...')
+    setLoadRequest((current) => current + 1)
+  }, [])
 
   useEffect(() => {
     let mounted = true
+    let progressInterval: ReturnType<typeof setInterval> | null = null
 
     async function loadPyodide() {
       try {
+        setLoading(true)
+        setError(null)
         setStage('Carregando script do Pyodide...')
         setProgress(10)
 
@@ -75,9 +89,12 @@ export function usePyodide() {
         setProgress(50)
 
         // Simular progresso durante o carregamento
-        const progressInterval = setInterval(() => {
+        progressInterval = setInterval(() => {
           if (!mounted) {
-            clearInterval(progressInterval)
+            if (progressInterval) {
+              clearInterval(progressInterval)
+              progressInterval = null
+            }
             return
           }
           setProgress((prev) => {
@@ -93,7 +110,10 @@ export function usePyodide() {
           indexURL: 'https://cdn.jsdelivr.net/pyodide/v0.26.1/full/',
         })
 
-        clearInterval(progressInterval)
+        if (progressInterval) {
+          clearInterval(progressInterval)
+          progressInterval = null
+        }
 
         if (mounted) {
           setStage('Finalizando...')
@@ -106,6 +126,11 @@ export function usePyodide() {
           setLoading(false)
         }
       } catch (err) {
+        if (progressInterval) {
+          clearInterval(progressInterval)
+          progressInterval = null
+        }
+
         if (mounted) {
           setError(err instanceof Error ? err.message : 'Erro desconhecido ao carregar Pyodide')
           setLoading(false)
@@ -118,9 +143,12 @@ export function usePyodide() {
 
     return () => {
       mounted = false
+      if (progressInterval) {
+        clearInterval(progressInterval)
+      }
     }
-  }, [])
+  }, [loadRequest])
 
-  return { pyodide, loading, error, progress, stage }
+  return { pyodide, loading, error, progress, stage, retry }
 }
 

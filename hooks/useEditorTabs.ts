@@ -164,6 +164,14 @@ export function useEditorTabs() {
     )
   }, [])
 
+  const replaceTabs = useCallback((nextTabs: EditorTab[], nextActiveTabId: string) => {
+    const normalized = nextTabs.length > 0
+      ? nextTabs.map((tab) => ({ ...tab, plots: tab.plots ?? [] }))
+      : [{ id: Date.now().toString(), name: 'editor.py', code: '', output: '', hasError: false, plots: [] }]
+    setTabs(normalized)
+    setActiveTabId(normalized.some((tab) => tab.id === nextActiveTabId) ? nextActiveTabId : normalized[0].id)
+  }, [])
+
   const activeTab = tabs.find((tab) => tab.id === activeTabId) || tabs[0]
 
   return {
@@ -177,6 +185,7 @@ export function useEditorTabs() {
     updateTabOutput,
     addTabPlot,
     clearTabPlots,
+    replaceTabs,
   }
 }
 
