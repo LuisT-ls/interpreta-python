@@ -1,6 +1,7 @@
 {
-  "name": "Interpretador Python Web",
-  "short_name": "Python Web",
+  "name": "Interpreta Python",
+  "short_name": "Interpreta",
+  "description": "Seu laboratório para aprender Python programando no navegador.",
   "start_url": "/",
   "scope": "/",
   "icons": [
@@ -15,8 +16,8 @@
       "type": "image/png"
     }
   ],
-  "theme_color": "#ffffff",
-  "background_color": "#ffffff",
+  "theme_color": "#2449b8",
+  "background_color": "#0b1530",
   "display": "standalone",
   "orientation": "any"
 }

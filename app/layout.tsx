@@ -6,8 +6,8 @@ import './globals.css'
 const inter = Inter({ subsets: ['latin'] })
 
 const siteUrl = 'https://icti-python.vercel.app'
-const siteName = 'Interpretador Python Web'
-const description = 'Execute código Python no navegador com Pyodide. Editor com syntax highlighting, múltiplas abas, validação em tempo real e suporte a input(). Sem backend.'
+const siteName = 'Interpreta Python'
+const description = 'Aprenda Python programando no navegador. Escreva e execute código em um ambiente interativo com editor, notebooks e trilha guiada — sem instalação.'
 
 export const metadata: Metadata = {
   metadataBase: new URL(siteUrl),
@@ -52,11 +52,11 @@ export const metadata: Metadata = {
   },
   icons: {
     icon: [
-      { url: '/favicon/favicon-16x16.png', sizes: '16x16', type: 'image/png' },
+      { url: '/favicon.svg', type: 'image/svg+xml' },
       { url: '/favicon/favicon-32x32.png', sizes: '32x32', type: 'image/png' },
     ],
     apple: '/favicon/apple-touch-icon.png',
-    shortcut: '/favicon/favicon.ico',
+    shortcut: '/favicon.svg',
   },
   manifest: '/favicon/site.webmanifest',
   openGraph: {
@@ -68,10 +68,10 @@ export const metadata: Metadata = {
     description,
     images: [
       {
-        url: '/logo.png',
+        url: '/social-card.png',
         width: 1200,
         height: 630,
-        alt: 'Interpretador Python Web - Execute código Python no navegador',
+        alt: 'Interpreta Python — seu laboratório para aprender programando no navegador',
       },
     ],
   },
@@ -79,7 +79,7 @@ export const metadata: Metadata = {
     card: 'summary_large_image',
     title: siteName,
     description,
-    images: ['/logo.png'],
+    images: ['/social-card.png'],
     creator: '@LuisT-ls',
   },
   robots: {

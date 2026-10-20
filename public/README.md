@@ -2,25 +2,12 @@
 
 Esta pasta contém arquivos estáticos que serão servidos publicamente.
 
-## Favicon
+## Identidade visual
 
-Coloque o arquivo `favicon.ico` nesta pasta (`public/favicon.ico`).
+- `logo.svg` é a marca vetorial tipográfica; o cabeçalho apresenta o mesmo wordmark em texto responsivo.
+- `favicon.svg` usa o monograma tipográfico `Py` e é acompanhado pelas versões PNG e ICO.
+- `social-card.svg` é a fonte do cartão Open Graph; `social-card.png` é a versão rasterizada usada nos metadados.
+- `favicon/` contém as versões PNG para navegadores, iOS e instalação PWA, além do `favicon.ico` legado.
 
-O Next.js também suporta colocar o favicon diretamente em `app/favicon.ico` (que será detectado automaticamente).
-
-## Logo
-
-Coloque o arquivo da logo aqui, por exemplo:
-- `logo.png`
-- `logo.svg`
-- `logo.jpg`
-
-A logo será referenciada no código como `/logo.png` (ou o nome do arquivo que você escolher).
-
-## Outros ícones (opcional)
-
-Você também pode adicionar:
-- `apple-touch-icon.png` - Ícone para dispositivos Apple
-- `icon-192x192.png` - Ícone PWA (192x192)
-- `icon-512x512.png` - Ícone PWA (512x512)
+Os caminhos e metadados são configurados em `app/layout.tsx`.
 

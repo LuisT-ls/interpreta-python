@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="630" viewBox="0 0 1200 630">
+  <rect width="1200" height="630" fill="#f7f9fc"/>
+  <rect x="112" y="116" width="72" height="5" rx="2.5" fill="#2563eb"/>
+  <text x="112" y="282" font-family="Inter, Arial, sans-serif" font-size="88" letter-spacing="-3.5">
+    <tspan fill="#172033" font-weight="500">Interpreta</tspan><tspan dx="20" fill="#2563eb" font-weight="700">Python</tspan>
+  </text>
+  <text x="118" y="348" fill="#536174" font-family="Inter, Arial, sans-serif" font-size="31">Aprenda programando no navegador.</text>
+  <path d="M118 405h964" stroke="#dce2eb" stroke-width="2"/>
+  <circle cx="130" cy="468" r="6" fill="#f2b931"/>
+  <text x="153" y="478" fill="#536174" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="24">&gt;&gt;&gt; print("Olá, Python!")</text>
+</svg>
