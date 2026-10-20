@@ -1,5 +1,7 @@
 # 🚀 Recomendações de Melhorias - Interpretador Python Web
 
+> Documento de recomendações anterior à implementação dos workspaces locais, notebooks e histórico. Para o estado atual e as tarefas priorizadas, consulte [ROADMAP_PRODUTO_UX.md](./ROADMAP_PRODUTO_UX.md); esta lista não deve ser tratada como backlog vigente.
+
 Este documento apresenta recomendações de melhorias para a aplicação, organizadas por categoria e prioridade. A aplicação já está bem estruturada e funcional, então estas melhorias focam em otimização, experiência do usuário e manutenibilidade.
 
 ---

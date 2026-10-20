@@ -1,12 +1,12 @@
 # 🐍 Interpretador Python Web
 
-[![Next.js](https://img.shields.io/badge/Next.js-16.0.5-black)](https://nextjs.org/)
-[![React](https://img.shields.io/badge/React-19.0.0-blue)](https://react.dev/)
+[![Next.js](https://img.shields.io/badge/Next.js-16.x-black)](https://nextjs.org/)
+[![React](https://img.shields.io/badge/React-19.x-blue)](https://react.dev/)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.6-blue)](https://www.typescriptlang.org/)
 [![Pyodide](https://img.shields.io/badge/Pyodide-0.26.1-green)](https://pyodide.org/)
 [![License](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
-Uma aplicação web moderna e completa que permite executar código Python diretamente no navegador usando Pyodide (WebAssembly), sem necessidade de backend ou servidor.
+Uma aplicação web para executar código Python diretamente no navegador com Pyodide (WebAssembly). A execução continua local; opcionalmente, usuários autenticados podem sincronizar projetos e compartilhar cópias somente para leitura pela infraestrutura Auth0 + Neon.
 
 🌐 **Acesse a aplicação:** [https://icti-python.vercel.app/](https://icti-python.vercel.app/)  
 📦 **Repositório:** [https://github.com/LuisT-ls/interpreta-python](https://github.com/LuisT-ls/interpreta-python)
@@ -25,6 +25,7 @@ Uma aplicação web moderna e completa que permite executar código Python diret
 - ✅ **Botão de parar execução** - Interrompa códigos em loop infinito ou execuções longas com KeyboardInterrupt
 - ✅ **Suporte a `input()`** - Sistema de input inline no terminal, sem popups do navegador
 - ✅ **Suporte a imports** - Imports são tratados separadamente e executados antes do código principal
+- ✅ **Ações no terminal** - Copiar, exportar `.txt` e limpar saída, inclusive a célula ativa do notebook
 
 ### 📝 Editor de Código
 - ✅ **Syntax highlighting** - Destaque de sintaxe para palavras-chave, funções built-in, strings, números e operadores
@@ -43,6 +44,9 @@ Uma aplicação web moderna e completa que permite executar código Python diret
 - ✅ **Importar código** - Carregue arquivos `.py` diretamente no editor
 - ✅ **Exportar múltiplas abas** - Exporte todas as abas como arquivo `.zip`
 - ✅ **Menu interativo de exportação** - Escolha entre exportar apenas a aba atual ou todas as abas
+- ✅ **Projetos portáteis** - Importe e exporte projetos completos em `.zip`, com código, células, histórico e arquivos virtuais
+- ✅ **Sincronização opcional** - Entre com Auth0 para salvar projetos privados na nuvem; conflitos de versão são detectados antes de sobrescrever dados
+- ✅ **Compartilhamento somente para leitura** - Gere links temporários para uma cópia do projeto, sem expor o workspace privado
 
 ### 🎨 Interface e Layout
 - ✅ **Layout customizável** - Posicione o terminal abaixo, à direita, à esquerda ou acima do editor
@@ -51,6 +55,8 @@ Uma aplicação web moderna e completa que permite executar código Python diret
 - ✅ **Design moderno** - Interface inspirada no VSCode com glassmorphism
 - ✅ **Terminal estilizado** - Visual de terminal com fundo preto e texto verde
 - ✅ **Responsivo** - Funciona perfeitamente em desktop, tablet e mobile
+- ✅ **Acessibilidade** - Diálogos com foco inicial/retorno, navegação por teclado e mensagens para leitores de tela
+- ✅ **Drawer de arquivos no mobile** - O explorador abre sobre o editor e pode ser fechado por Escape ou clicando fora
 
 ### 📊 Visualização de Dados
 - ✅ **Suporte a Matplotlib** - Renderize gráficos do matplotlib diretamente na interface
@@ -69,16 +75,16 @@ Uma aplicação web moderna e completa que permite executar código Python diret
 - ✅ **Botão flutuante de acesso rápido** - Acesso rápido ao sistema de arquivos via botão flutuante
 
 ### 📦 Gerenciador de Pacotes
-- ✅ **Interface gráfica para Pip** - Instale pacotes Python diretamente pela interface
-- ✅ **Busca de pacotes** - Busque pacotes populares do PyPI
+- ✅ **Interface de pacotes** - Instale pacotes Python compatíveis com Pyodide usando micropip
+- ✅ **Busca de pacotes** - Filtra uma seleção curada de pacotes populares; não consulta todo o PyPI
 - ✅ **Categorias de pacotes** - Pacotes organizados por categoria (Data Science, Web, Utils, etc.)
 - ✅ **Lista de pacotes instalados** - Visualize todos os pacotes já instalados
 - ✅ **Instalação com feedback visual** - Status de instalação em tempo real
-- ✅ **Desinstalação de pacotes** - Remova pacotes não mais necessários
+- ℹ️ **Remover da lista** - Oculta o pacote na interface; o módulo permanece no runtime Pyodide
 - ✅ **Botão flutuante de acesso rápido** - Acesso rápido ao gerenciador via botão flutuante
 
 ### ⌨️ Produtividade
-- ✅ **Command Palette** - Acesse todas as funcionalidades via atalho de teclado (Ctrl+K / Cmd+K)
+- ✅ **Command Palette** - Acesse ações via atalho de teclado (Ctrl+P / Cmd+P)
 - ✅ **Zen Mode** - Modo foco que esconde elementos da interface para máxima concentração
 - ✅ **Atalhos de teclado** - Navegação rápida por comandos e ações
 
@@ -89,6 +95,16 @@ Uma aplicação web moderna e completa que permite executar código Python diret
 - ✅ **Auto-scroll** - Terminal rola automaticamente para mostrar a saída mais recente
 - ✅ **Animações suaves** - Transições e efeitos visuais modernos
 - ✅ **Debounce inteligente** - Validação de sintaxe usa debounce de 800ms para evitar processamento excessivo
+- ✅ **Feedback consistente** - Toasts de sucesso e erro substituem alertas nativos nos fluxos comuns
+- ✅ **Limpar workspace** - Apaga código, histórico, progresso e arquivos virtuais após confirmação; preserva runtime e pacotes carregados
+- ✅ **Preparar offline** - Armazena sob demanda o núcleo Pyodide já baixado neste navegador; a instalação de pacotes novos ainda requer internet
+
+### 🧩 Projetos e aprendizagem
+- ✅ **Workspace local por projeto** - Projetos, abas, configurações, células e progresso ficam no IndexedDB do navegador
+- ✅ **Modos script e notebook** - Células executáveis com namespace persistente por projeto
+- ✅ **Trilha guiada** - Desafios introdutórios com dicas e progresso
+- ✅ **Histórico de execuções** - Até 30 versões por projeto, com código, saída, erros e gráficos
+- ✅ **Backup do filesystem virtual** - Snapshot automático periódico, limitado a 20 MB por projeto
 
 ### 🧪 Qualidade e Testes
 - ✅ **Testes unitários** - Cobertura de testes para lógica crítica (parser de erros)
@@ -111,7 +127,9 @@ Este projeto utiliza as seguintes tecnologias:
 - **[React Resizable Panels](https://github.com/bvaughn/react-resizable-panels)** - Painéis redimensionáveis para layout flexível
 - **[Jest](https://jestjs.io/)** - Framework de testes JavaScript
 - **[Testing Library](https://testing-library.com/)** - Utilitários para testes de componentes React
-- **Editor customizado** - Editor de código Python com syntax highlighting e validação em tempo real implementado do zero
+- **[Auth0 Next.js SDK](https://github.com/auth0/nextjs-auth0)** - Login e sessão para sincronização opcional
+- **[Neon PostgreSQL](https://neon.tech/)** - Armazenamento de projetos autenticados
+- **[CodeMirror 6](https://codemirror.net/)** - Editor Python com busca, seleção e navegação por teclado
 
 ---
 
@@ -140,6 +158,16 @@ npm install
 ```bash
 npm run dev
 ```
+
+Sem variáveis de autenticação e banco, o modo local continua disponível; os recursos de nuvem ficam desativados. Para habilitá-los localmente, configure `AUTH0_DOMAIN`, `AUTH0_CLIENT_ID`, `AUTH0_CLIENT_SECRET`, `AUTH0_SECRET`, `APP_BASE_URL`, `DATABASE_URL` e `DATABASE_URL_UNPOOLED` no `.env.local`. `APP_BASE_URL` deve corresponder à URL cadastrada como callback/logout no Auth0 (em desenvolvimento, normalmente `http://localhost:3000`). Nunca versione esse arquivo.
+
+Antes do primeiro uso da nuvem, aplique o schema usando a conexão direta do Neon:
+
+```bash
+npm run db:migrate
+```
+
+O comando exige `DATABASE_URL_UNPOOLED`; a aplicação usa `DATABASE_URL` (pooler) em runtime. Em produção, configure ambas como variáveis do projeto Vercel e execute a migração como etapa operacional controlada antes de habilitar sincronização.
 
 > **💡 Dica:** Next.js 16 usa o **Turbopack** por padrão, oferecendo tempos de compilação muito mais rápidos. Se precisar usar Webpack, execute `npm run dev -- --webpack`.
 
@@ -223,7 +251,7 @@ with open('dados.txt', 'r') as f:
 
 Use o Gerenciador de Pacotes para instalar bibliotecas Python suportadas pelo Pyodide:
 
-1. **Abrir o Gerenciador** - Clique no botão flutuante de cubo 3D abaixo do botão de arquivos, ou use o Command Palette (Ctrl+K)
+1. **Abrir o Gerenciador** - Use a barra de ações ou a Command Palette (`Ctrl+P` / `Cmd+P`)
 2. **Buscar pacote** - Digite o nome do pacote na barra de busca
 3. **Filtrar por categoria** - Use os filtros para encontrar pacotes por categoria
 4. **Instalar** - Clique em "Instalar" ao lado do pacote desejado
@@ -264,7 +292,7 @@ plt.show()
 
 Acesse rapidamente todas as funcionalidades via Command Palette:
 
-1. **Abrir** - Pressione `Ctrl+K` (Windows/Linux) ou `Cmd+K` (Mac)
+1. **Abrir** - Pressione `Ctrl+P` (Windows/Linux) ou `Cmd+P` (Mac)
 2. **Navegar** - Use as setas ou digite para filtrar comandos
 3. **Executar** - Pressione Enter para executar o comando selecionado
 
@@ -281,7 +309,7 @@ Comandos disponíveis:
 
 O Modo Zen remove elementos da interface para focar apenas no código:
 
-1. **Ativar** - Use o Command Palette (Ctrl+K) e selecione "Zen Mode"
+1. **Ativar** - Use o Command Palette (`Ctrl+P`) e selecione "Zen Mode"
 2. **Focar** - A interface ficará minimalista, mostrando apenas o essencial
 3. **Desativar** - Clique no botão "Sair do Modo Zen" que aparece no topo
 
@@ -409,13 +437,15 @@ print(f"\nPessoas em São Paulo: {len(df[df['Cidade'] == 'São Paulo'])}")
 ```
 interpreta-python/
 ├── app/
+│   ├── api/                  # Sessão, projetos privados, compartilhamentos e busca exata PyPI
+│   ├── share/[token]/        # Visualização/importação de cópia compartilhada
 │   ├── img/
 │   │   └── favicon/          # Favicons e ícones
 │   ├── layout.tsx            # Layout principal da aplicação (metadata, fontes)
 │   ├── page.tsx              # Página principal (orquestrador, integração de componentes)
 │   ├── globals.css            # Estilos globais
-│   ├── robots.ts             # Configuração de robots.txt
-│   └── sitemap.ts            # Configuração de sitemap.xml
+│   ├── robots.ts              # Configuração de robots.txt
+│   └── sitemap.ts             # Sitemap da aplicação
 ├── components/
 │   ├── PythonEditor.tsx       # Editor de código com syntax highlighting, validação e auto-complete
 │   ├── OutputTerminal.tsx    # Terminal de saída com input inline e renderização de plots
@@ -429,7 +459,11 @@ interpreta-python/
 │   ├── PackageManager.tsx    # Interface gráfica do gerenciador de pacotes
 │   ├── CommandPalette.tsx    # Palette de comandos com atalhos de teclado
 │   ├── AboutModal.tsx        # Modal com informações sobre a aplicação
-│   └── InputDialog.tsx       # Dialog para inputs do usuário
+│   ├── ActionToolbar.tsx, OnboardingModal.tsx
+│   ├── PersistenceNotice.tsx
+│   ├── WorkspaceHub.tsx, NotebookEditor.tsx
+│   ├── LearningPathModal.tsx, ExecutionHistoryModal.tsx
+│   └── ResetWorkspaceDialog.tsx, ToastViewport.tsx
 ├── hooks/
 │   ├── usePyodide.ts         # Hook para carregar e gerenciar Pyodide
 │   ├── useLayout.ts          # Hook para gerenciar layout (com persistência no localStorage)
@@ -438,17 +472,22 @@ interpreta-python/
 │   ├── useSyntaxValidation.ts # Hook para validação de sintaxe em tempo real
 │   ├── useFileSystem.ts      # Hook para interagir com o sistema de arquivos virtual
 │   ├── usePackageManager.ts  # Hook para gerenciar pacotes Python (micropip)
-│   ├── useMatplotlib.ts      # Hook para gerenciar plots do matplotlib
-│   └── useZenMode.ts         # Hook para gerenciar modo Zen
+│   ├── useProjectWorkspace.ts # Projetos locais e persistência
+│   ├── useAccessibleDialog.ts, useToast.ts
+│   └── useZenMode.ts          # Hook para gerenciar modo Zen
 ├── utils/
 │   ├── parsePyodideError.ts  # Parser de erros do Pyodide com mapeamento de linhas
 │   ├── shareCode.ts          # Utilitários para compartilhamento de código
+│   ├── workspaceDb.ts, projectArchive.ts, virtualWorkspaceFs.ts
+│   ├── logger.ts
 │   └── __tests__/
 │       ├── parsePyodideError.test.ts # Testes unitários do parser de erros
 │       └── README.md          # Documentação dos testes
 ├── docs/
-│   └── FILESYSTEM_ANALYSIS.md # Análise e documentação do sistema de arquivos
+│   ├── FILESYSTEM_ANALYSIS.md # Análise do sistema de arquivos
+│   └── ROADMAP_PRODUTO_UX.md  # Roadmap e status de implementação
 ├── public/
+│   ├── sw.js                 # Cache offline opt-in para recursos Pyodide
 │   ├── logo.png              # Logo da aplicação
 │   └── favicon/              # Arquivos de favicon
 ├── coverage/                 # Relatórios de cobertura de testes (gerado)
@@ -457,7 +496,9 @@ interpreta-python/
 ├── .eslintrc.json            # Configuração do ESLint
 ├── .gitignore                # Arquivos ignorados pelo Git
 ├── next.config.js            # Configuração do Next.js
-├── package.json              # Dependências do projeto
+├── db/migrations/            # Schema da nuvem
+├── scripts/                  # Migração de banco
+├── package.json              # Dependências e scripts do projeto
 ├── postcss.config.js         # Configuração do PostCSS
 ├── tailwind.config.ts        # Configuração do Tailwind CSS
 ├── tsconfig.json             # Configuração do TypeScript
@@ -466,6 +507,12 @@ interpreta-python/
 ```
 
 ---
+
+### Persistência e limites
+
+Projetos e histórico ficam no IndexedDB deste navegador; configurações legadas do editor ainda usam `localStorage`. Ao entrar, o usuário pode sincronizar snapshots de projetos com sua conta Auth0 e gerar links temporários somente para leitura. O salvamento detecta versões concorrentes, mas não oferece edição colaborativa em tempo real. Sem configuração de Auth0/Neon, a aplicação permanece utilizável localmente e os recursos de nuvem ficam indisponíveis.
+
+O backup automático dos arquivos virtuais locais ocorre periodicamente e tem limite de 20 MB por projeto. Limpar os dados do navegador pode remover projetos e backups. Pacotes instalados ficam no runtime atual e não são restaurados automaticamente ao abrir um projeto; “Remover da lista” não os desinstala. “Preparar offline” guarda o núcleo Pyodide neste dispositivo, mas pacotes não cacheados e novas instalações continuam dependendo de internet.
 
 ## 🚀 Deploy
 
@@ -481,7 +528,9 @@ A aplicação está otimizada para deploy na Vercel:
 
 4. **A Vercel detectará automaticamente** que é um projeto Next.js
 
-5. **Clique em "Deploy"** - não é necessário configurar variáveis de ambiente
+5. **Configure Auth0 e Neon no projeto Vercel** para ativar login, sincronização e compartilhamento; a execução local no navegador não depende desses serviços
+6. **Aplique a migração do Neon** com a conexão direta antes de habilitar os endpoints de nuvem
+7. **Cadastre as URLs de callback/logout do Auth0** para o domínio de produção e valide login, logout e compartilhamento após o deploy
 
 6. **Aguarde o deploy** e sua aplicação estará online!
 
