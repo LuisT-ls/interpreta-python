@@ -94,15 +94,15 @@ export function OutputTerminal({
   }
 
   return (
-    <div className="relative h-full flex flex-col bg-black rounded-lg overflow-hidden border border-gray-800">
-      <div className="px-3 py-2 bg-gray-900 border-b border-gray-800 flex flex-wrap items-center gap-2 flex-shrink-0 relative sm:px-4">
+    <div className="relative flex h-full min-h-0 min-w-0 w-full flex-col overflow-hidden rounded-lg border border-gray-800 bg-black">
+      <div className="relative flex shrink-0 flex-wrap items-center gap-2 border-b border-gray-800 bg-gray-900 px-2.5 py-2 sm:px-4">
         <div className="flex gap-1.5">
           <div className="w-3 h-3 rounded-full bg-red-500" aria-hidden="true"></div>
           <div className="w-3 h-3 rounded-full bg-yellow-500" aria-hidden="true"></div>
           <div className="w-3 h-3 rounded-full bg-green-500" aria-hidden="true"></div>
         </div>
         <span className="text-xs text-gray-400 ml-1 sm:ml-2">Terminal</span>
-        <div className="ml-auto flex flex-wrap items-center gap-1">
+        <div className="ml-auto flex shrink-0 flex-wrap items-center gap-1">
           <button type="button" onClick={handleCopyOutput} disabled={!output} className="rounded px-2 py-1 text-[11px] text-gray-300 hover:bg-gray-800 focus:outline-none focus:ring-2 focus:ring-blue-400 disabled:cursor-not-allowed disabled:opacity-40" aria-label="Copiar saída do terminal">
             {isCopied ? 'Copiado' : 'Copiar'}
           </button>
@@ -116,7 +116,7 @@ export function OutputTerminal({
       </div>
       <div
         ref={outputRef}
-        className="flex-1 overflow-auto p-4"
+        className="min-h-0 min-w-0 flex-1 overflow-auto p-3 sm:p-4"
         role="region"
         tabIndex={0}
         aria-label="Terminal de saída do código Python"
@@ -163,7 +163,7 @@ export function OutputTerminal({
             
             {output && (
               <pre
-                className={`font-mono text-sm whitespace-pre-wrap break-words ${isError ? 'text-red-400' : 'text-green-400'
+                className={`min-w-0 whitespace-pre-wrap break-words font-mono text-[13px] leading-relaxed sm:text-sm ${isError ? 'text-red-400' : 'text-green-400'
                   }`}
                 style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}
                 role="log"
@@ -176,8 +176,8 @@ export function OutputTerminal({
               </pre>
             )}
             {isWaitingInput && (
-              <form onSubmit={handleSubmit} className="mt-2 flex items-center gap-2">
-                <span id="terminal-input-prompt" className="text-green-400 font-mono text-sm whitespace-pre-wrap">
+              <form onSubmit={handleSubmit} className="mt-2 flex min-w-0 items-center gap-2">
+                <span id="terminal-input-prompt" className="max-w-full break-words whitespace-pre-wrap font-mono text-sm text-green-400">
                   {inputPrompt}
                 </span>
                 <input
@@ -185,7 +185,7 @@ export function OutputTerminal({
                   type="text"
                   aria-labelledby="terminal-input-prompt"
                   autoComplete="off"
-                  className="flex-1 bg-transparent border-none outline-none text-green-400 font-mono text-sm focus:ring-0"
+                  className="min-w-0 flex-1 border-none bg-transparent font-mono text-sm text-green-400 outline-none focus:ring-0"
                   autoFocus
                   style={{ caretColor: 'rgb(74, 222, 128)' }}
                 />

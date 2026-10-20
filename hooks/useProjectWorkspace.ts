@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { EditorTab } from '@/hooks/useEditorTabs'
 import type { LayoutType } from '@/hooks/useLayout'
+import { migrateStarterCode } from '@/utils/starterCode'
 import {
   deleteWorkspaceProject,
   listWorkspaceProjects,
@@ -58,9 +59,17 @@ export function createEmptyProject(name: string, tabs: EditorTab[], settings?: {
 
 function normalizeProject(project: WorkspaceProject): WorkspaceProject {
   const tabs = Array.isArray(project.tabs) && project.tabs.length > 0 ? project.tabs : createEmptyProject(project.name, []).tabs
-  const normalizedTabs = tabs.map((tab) => ({ ...tab, plots: tab.plots ?? [] }))
+  const normalizedTabs = tabs.map((tab) => ({
+    ...tab,
+    code: migrateStarterCode(tab.code),
+    plots: tab.plots ?? [],
+  }))
   const cells = Array.isArray(project.cells) && project.cells.length > 0
-    ? project.cells.map((cell) => ({ ...cell, plots: cell.plots ?? [] }))
+    ? project.cells.map((cell) => ({
+      ...cell,
+      code: migrateStarterCode(cell.code),
+      plots: cell.plots ?? [],
+    }))
     : [{ id: crypto.randomUUID(), code: normalizedTabs[0].code, output: '', hasError: false, plots: [] }]
 
   return {

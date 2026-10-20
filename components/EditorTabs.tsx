@@ -32,42 +32,46 @@ export function EditorTabs({
   onFontSizeChange?: (size: number) => void
 }) {
   return (
-    <div className="flex items-center justify-between gap-1 px-2 bg-gray-50 dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 h-10 overflow-hidden flex-shrink-0 relative">
-      <div className="flex items-center gap-1 overflow-x-auto no-scrollbar h-full">
-        {tabs.map((tab) => (
-          <button
-            key={tab.id}
-            onClick={() => onTabClick(tab.id)}
-            className={`
-              flex items-center gap-2 px-3 py-1.5 text-sm font-medium rounded-t-lg transition-colors whitespace-nowrap
-              ${activeTabId === tab.id
-                ? 'bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 border-t border-l border-r border-gray-200 dark:border-gray-700 relative top-[1px]'
-                : 'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-100 hover:bg-gray-100 dark:hover:bg-gray-700'
-              }
-            `}
-          >
-            <span className="max-w-[150px] truncate">{tab.name}</span>
-            {tabs.length > 1 && (
-              <div
-                onClick={(e) => {
-                  e.stopPropagation()
-                  onTabClose(tab.id)
-                }}
-                className="ml-1 p-0.5 rounded hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors cursor-pointer opacity-60 hover:opacity-100"
-                role="button"
-                tabIndex={0}
-                aria-label={`Fechar ${tab.name}`}
+    <div className="relative flex h-12 min-w-0 flex-shrink-0 items-center justify-between gap-1 overflow-hidden border-b border-gray-200 bg-gray-50 px-1.5 dark:border-gray-700 dark:bg-gray-800 sm:h-10 sm:px-2">
+      <div className="flex h-full min-w-0 flex-1 items-center gap-1 overflow-hidden">
+        <div className="flex h-full min-w-0 flex-1 items-center gap-1 overflow-x-auto no-scrollbar">
+          {tabs.map((tab) => (
+            <div
+              key={tab.id}
+              className={`flex h-full shrink-0 items-center gap-0.5 rounded-t-lg px-1 transition-colors sm:px-1.5 ${activeTabId === tab.id
+                ? 'relative top-[1px] border border-b-0 border-gray-200 bg-white text-gray-900 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-100'
+                : 'text-gray-600 hover:bg-gray-100 hover:text-gray-900 dark:text-gray-400 dark:hover:bg-gray-700 dark:hover:text-gray-100'
+              }`}
+            >
+              <button
+                type="button"
+                onClick={() => onTabClick(tab.id)}
+                aria-pressed={activeTabId === tab.id}
+                className="flex min-h-9 min-w-0 items-center px-1 text-sm font-medium"
+                title={tab.name}
               >
-                <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                </svg>
-              </div>
-            )}
-          </button>
-        ))}
+                <span className="max-w-[112px] truncate sm:max-w-[150px]">{tab.name}</span>
+              </button>
+              {tabs.length > 1 && (
+                <button
+                  type="button"
+                  onClick={() => onTabClose(tab.id)}
+                  className="inline-flex min-h-8 min-w-8 shrink-0 items-center justify-center rounded text-gray-500 opacity-70 transition-colors hover:bg-gray-200 hover:opacity-100 focus:outline-none focus:ring-2 focus:ring-blue-500 dark:text-gray-400 dark:hover:bg-gray-700"
+                  aria-label={`Fechar ${tab.name}`}
+                  title={`Fechar ${tab.name}`}
+                >
+                  <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              )}
+            </div>
+          ))}
+        </div>
         <button
+          type="button"
           onClick={onNewTab}
-          className="ml-1 p-1.5 text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-100 hover:bg-gray-200 dark:hover:bg-gray-700 rounded transition-colors"
+          className="ml-1 inline-flex min-h-9 min-w-9 shrink-0 items-center justify-center rounded text-gray-500 transition-colors hover:bg-gray-200 hover:text-gray-900 dark:text-gray-400 dark:hover:bg-gray-700 dark:hover:text-gray-100"
           title="Nova aba"
           aria-label="Criar nova aba"
         >
@@ -77,25 +81,27 @@ export function EditorTabs({
         </button>
       </div>
 
-      <div className="flex items-center gap-2 pl-2 border-l border-gray-200 dark:border-gray-700 ml-auto">
+      <div className="ml-auto flex shrink-0 items-center gap-0.5 border-l border-gray-200 pl-1 dark:border-gray-700 sm:gap-2 sm:pl-2">
         {onFontSizeChange && (
-          <div className="flex items-center bg-white dark:bg-gray-900 rounded border border-gray-200 dark:border-gray-700 mr-2">
+          <div className="mr-0 flex shrink-0 items-center rounded border border-gray-200 bg-white dark:border-gray-700 dark:bg-gray-900 sm:mr-1">
             <button
               onClick={() => onFontSizeChange(Math.max(10, fontSize - 1))}
-              className="px-2 py-1 text-xs font-medium text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800 border-r border-gray-200 dark:border-gray-700 disabled:opacity-50"
+              className="min-h-9 min-w-8 border-r border-gray-200 px-1.5 py-1 text-xs font-medium text-gray-600 hover:bg-gray-100 disabled:opacity-50 dark:border-gray-700 dark:text-gray-400 dark:hover:bg-gray-800 sm:px-2"
               disabled={fontSize <= 10}
               title="Diminuir fonte"
+              aria-label="Diminuir tamanho da fonte"
             >
               A-
             </button>
-            <span className="px-2 py-1 text-xs text-gray-500 dark:text-gray-400 min-w-[30px] text-center select-none">
+            <span className="min-w-6 select-none px-1 py-1 text-center text-xs text-gray-500 dark:text-gray-400 sm:min-w-[30px] sm:px-2">
               {fontSize}
             </span>
             <button
               onClick={() => onFontSizeChange(Math.min(24, fontSize + 1))}
-              className="px-2 py-1 text-xs font-medium text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800 disabled:opacity-50"
+              className="min-h-9 min-w-8 px-1.5 py-1 text-xs font-medium text-gray-600 hover:bg-gray-100 disabled:opacity-50 dark:text-gray-400 dark:hover:bg-gray-800 sm:px-2"
               disabled={fontSize >= 24}
               title="Aumentar fonte"
+              aria-label="Aumentar tamanho da fonte"
             >
               A+
             </button>
@@ -105,7 +111,7 @@ export function EditorTabs({
         {onShare && (
           <button
             onClick={onShare}
-            className="p-1.5 text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 hover:bg-gray-200 dark:hover:bg-gray-700 rounded transition-colors"
+            className="hidden min-h-9 min-w-8 shrink-0 items-center justify-center rounded text-gray-500 transition-colors hover:bg-gray-200 hover:text-gray-700 dark:text-gray-400 dark:hover:bg-gray-700 dark:hover:text-gray-200 min-[400px]:inline-flex sm:min-w-9"
             title="Compartilhar código"
             aria-label="Compartilhar código"
           >
@@ -117,7 +123,7 @@ export function EditorTabs({
         {onImport && (
           <button
             onClick={onImport}
-            className="p-1.5 text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 hover:bg-gray-200 dark:hover:bg-gray-700 rounded transition-colors"
+            className="hidden min-h-9 min-w-8 shrink-0 items-center justify-center rounded text-gray-500 transition-colors hover:bg-gray-200 hover:text-gray-700 dark:text-gray-400 dark:hover:bg-gray-700 dark:hover:text-gray-200 min-[400px]:inline-flex sm:min-w-9"
             title="Importar código"
             aria-label="Importar código"
           >
@@ -136,7 +142,7 @@ export function EditorTabs({
         ) : onExportCurrent ? (
           <button
             onClick={onExportCurrent}
-            className="p-1.5 text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 hover:bg-gray-200 dark:hover:bg-gray-700 rounded transition-colors"
+            className="hidden min-h-9 min-w-8 shrink-0 items-center justify-center rounded text-gray-500 transition-colors hover:bg-gray-200 hover:text-gray-700 dark:text-gray-400 dark:hover:bg-gray-700 dark:hover:text-gray-200 min-[400px]:inline-flex sm:min-w-9"
             title="Exportar código"
             aria-label="Exportar código"
           >

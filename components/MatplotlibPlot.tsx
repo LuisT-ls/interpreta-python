@@ -41,11 +41,11 @@ export function MatplotlibPlot({ imageData, width, height, id }: MatplotlibPlotP
   }, [imageData, width, height])
 
   return (
-    <div className="my-4 p-4 bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 shadow-sm">
+    <div className="my-3 max-w-full overflow-x-auto rounded-lg border border-gray-200 bg-white p-2 shadow-sm dark:border-gray-700 dark:bg-gray-800 sm:my-4 sm:p-4">
       <canvas
         ref={canvasRef}
         id={id}
-        className="max-w-full h-auto"
+        className="block h-auto max-w-full"
         style={{ maxWidth: '100%', height: 'auto' }}
       />
     </div>

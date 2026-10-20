@@ -26,6 +26,8 @@ interface ToolbarButtonProps {
   icon: ReactNode
   pressed?: boolean
   controls?: string
+  compact?: boolean
+  keepLabel?: boolean
 }
 
 function ToolbarButton({
@@ -36,6 +38,8 @@ function ToolbarButton({
   icon,
   pressed,
   controls,
+  compact = false,
+  keepLabel = false,
 }: ToolbarButtonProps) {
   const styles = {
     primary: 'bg-blue-600 text-white hover:bg-blue-700 focus:ring-blue-500',
@@ -51,11 +55,11 @@ function ToolbarButton({
       aria-label={label}
       aria-pressed={pressed}
       aria-controls={controls}
-      className={`inline-flex items-center justify-center gap-2 rounded-lg px-3 py-2 text-sm font-medium shadow-sm transition-colors focus:outline-none focus:ring-2 focus:ring-offset-1 dark:focus:ring-offset-gray-950 disabled:cursor-not-allowed disabled:opacity-50 ${styles[variant]}`}
+      className={`inline-flex items-center justify-center gap-2 rounded-lg ${compact ? 'px-2.5' : 'px-3'} py-2 text-sm font-medium shadow-sm transition-colors focus:outline-none focus:ring-2 focus:ring-offset-1 dark:focus:ring-offset-gray-950 disabled:cursor-not-allowed disabled:opacity-50 ${styles[variant]}`}
       title={label}
     >
       {icon}
-      <span className="hidden md:inline">{label}</span>
+      <span className={compact ? 'sr-only' : keepLabel ? 'whitespace-nowrap' : 'hidden md:inline'}>{label}</span>
     </button>
   )
 }
@@ -77,14 +81,16 @@ export function ActionToolbar({
 }: ActionToolbarProps) {
   return (
     <div
-      className="flex flex-wrap items-center justify-center gap-2 rounded-xl border border-gray-200 bg-gray-100/80 p-2 dark:border-gray-800 dark:bg-gray-900/80"
-      aria-label="Ações principais"
+      role="group"
+      aria-label="Ações principais do editor"
+      className="flex flex-wrap items-center justify-start gap-2 border-t border-gray-200 bg-gray-50/70 px-3 py-2.5 dark:border-gray-800 dark:bg-gray-950/20 xl:flex-nowrap"
     >
       <ToolbarButton
         label={isExecuting ? 'Executando...' : 'Executar'}
         onClick={onRun}
         disabled={isDisabled || isExecuting}
         variant="primary"
+        keepLabel
         icon={isExecuting ? (
           <svg className="h-4 w-4 animate-spin" viewBox="0 0 24 24" fill="none" aria-hidden="true">
             <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
@@ -111,8 +117,10 @@ export function ActionToolbar({
         />
       )}
 
+      <span className="mx-1 hidden h-6 w-px bg-gray-300 sm:block dark:bg-gray-700" aria-hidden="true" />
+
       <ToolbarButton
-        label="Novo"
+        label="Nova aba"
         onClick={onNewTab}
         icon={
           <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" aria-hidden="true">
@@ -121,7 +129,7 @@ export function ActionToolbar({
         }
       />
       <ToolbarButton
-        label="Importar"
+        label="Importar código"
         onClick={onImport}
         icon={
           <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" aria-hidden="true">
@@ -130,7 +138,7 @@ export function ActionToolbar({
         }
       />
       <ToolbarButton
-        label="Exportar"
+        label="Exportar código"
         onClick={onExport}
         icon={
           <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" aria-hidden="true">
@@ -138,6 +146,7 @@ export function ActionToolbar({
           </svg>
         }
       />
+      <span className="mx-1 hidden h-6 w-px bg-gray-300 sm:block dark:bg-gray-700" aria-hidden="true" />
       <ToolbarButton
         label={isFileSystemOpen ? 'Fechar arquivos' : 'Arquivos'}
         onClick={onToggleFiles}
@@ -182,6 +191,7 @@ export function ActionToolbar({
       <ToolbarButton
         label="Mais ações"
         onClick={onOpenCommandPalette}
+        compact
         icon={
           <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" aria-hidden="true">
             <circle cx="5" cy="12" r="1.5" fill="currentColor" />

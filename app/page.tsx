@@ -61,14 +61,31 @@ export default function Home() {
   const { layout, changeLayout, isMounted } = useLayout()
   const [fontSize, setFontSize] = useState(14)
   const [isCompactScreen, setIsCompactScreen] = useState(false)
+  const [isTabletScreen, setIsTabletScreen] = useState(false)
+  const [mobileWorkspaceView, setMobileWorkspaceView] = useState<'editor' | 'terminal'>('editor')
+  const mobileWorkbenchRef = useRef<HTMLElement | null>(null)
 
   useEffect(() => {
-    const mediaQuery = window.matchMedia('(max-width: 639px)')
-    const updateScreenSize = () => setIsCompactScreen(mediaQuery.matches)
+    const mobileQuery = window.matchMedia('(max-width: 767px)')
+    const tabletQuery = window.matchMedia('(min-width: 768px) and (max-width: 1023px)')
+    const updateScreenSize = () => {
+      setIsCompactScreen(mobileQuery.matches)
+      setIsTabletScreen(tabletQuery.matches)
+    }
     updateScreenSize()
-    mediaQuery.addEventListener('change', updateScreenSize)
-    return () => mediaQuery.removeEventListener('change', updateScreenSize)
+    mobileQuery.addEventListener('change', updateScreenSize)
+    tabletQuery.addEventListener('change', updateScreenSize)
+    return () => {
+      mobileQuery.removeEventListener('change', updateScreenSize)
+      tabletQuery.removeEventListener('change', updateScreenSize)
+    }
   }, [])
+
+  useEffect(() => {
+    if (isCompactScreen && mobileWorkspaceView === 'terminal') {
+      mobileWorkbenchRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
+    }
+  }, [isCompactScreen, mobileWorkspaceView])
 
   const [workspaceMode, setWorkspaceMode] = useState<'script' | 'notebook'>('script')
   const [notebookCells, setNotebookCells] = useState<NotebookCell[]>([])
@@ -520,21 +537,23 @@ export default function Home() {
 
   const runNotebookCell = useCallback((cellId: string, code: string) => {
     activeCellIdRef.current = cellId
+    if (isCompactScreen) setMobileWorkspaceView('terminal')
     void executeCode(code)
-  }, [executeCode])
+  }, [executeCode, isCompactScreen])
 
   const selectNotebookCell = useCallback((cellId: string) => {
     activeCellIdRef.current = cellId
   }, [])
 
   const runActiveEditor = useCallback(() => {
+    if (isCompactScreen) setMobileWorkspaceView('terminal')
     if (workspaceMode === 'notebook') {
       const cell = notebookCells.find((item) => item.id === activeCellIdRef.current) ?? notebookCells[0]
       if (cell) runNotebookCell(cell.id, cell.code)
       return
     }
     void executeCode()
-  }, [workspaceMode, notebookCells, runNotebookCell, executeCode])
+  }, [isCompactScreen, workspaceMode, notebookCells, runNotebookCell, executeCode])
 
   const openLearningLesson = useCallback((lesson: LearningLesson) => {
     setWorkspaceMode('script')
@@ -943,9 +962,95 @@ export default function Home() {
   const terminalPlots = workspaceMode === 'notebook'
     ? activeNotebookCell?.plots ?? []
     : activeTab.plots
-  const panelOrientation = isCompactScreen || layout === 'bottom' || layout === 'top'
+  const panelOrientation = isCompactScreen || isTabletScreen || layout === 'bottom' || layout === 'top'
     ? 'vertical'
     : 'horizontal'
+  const terminalFirst = panelOrientation === 'horizontal' ? layout === 'left' : layout === 'top'
+
+  const editorContent = loading ? <EditorSkeleton /> : (
+    <>
+      <EditorTabs
+        tabs={tabs}
+        activeTabId={activeTabId}
+        onTabClick={setActiveTabId}
+        onTabClose={closeTab}
+        onNewTab={createNewTab}
+        onImport={importCode}
+        onExportCurrent={exportCurrentTab}
+        onExportAll={exportAllTabs}
+        onShare={shareCode}
+        fontSize={fontSize}
+        onFontSizeChange={handleFontSizeChange}
+      />
+      <div className="min-h-0 min-w-0 flex-1 overflow-hidden">
+        {workspaceMode === 'notebook' ? (
+          <NotebookEditor
+            cells={notebookCells}
+            onChange={setNotebookCells}
+            onRunCell={runNotebookCell}
+            onSelectCell={selectNotebookCell}
+            isExecuting={isExecuting}
+            isDisabled={loading || !pyodide || isResettingWorkspace}
+            fontSize={fontSize}
+          />
+        ) : (
+          <PythonEditor
+            code={activeTab.code}
+            onChange={(newCode) => {
+              updateTabCode(activeTabId, newCode)
+              clearErrorLine()
+            }}
+            disabled={loading || isExecuting}
+            fileName={activeTab.name}
+            errorLine={errorLine}
+            errorFocusRequest={errorFocusRequest}
+            onRun={runActiveEditor}
+            fontSize={fontSize}
+          />
+        )}
+      </div>
+    </>
+  )
+
+  const terminalContent = loading ? <TerminalSkeleton /> : (
+    <OutputTerminal
+      output={terminalOutput}
+      isError={terminalHasError}
+      errorLine={errorLine}
+      isLoading={false}
+      isWaitingInput={isWaitingInput}
+      inputPrompt={inputPrompt}
+      onInputSubmit={onInputSubmit}
+      onGoToError={focusErrorLine}
+      onClear={clearTerminal}
+      onNotify={notify}
+      plots={terminalPlots}
+    />
+  )
+
+  const editorPanel = (
+    <Panel key="editor" defaultSize={60} minSize={20} className="flex min-h-0 min-w-0 flex-col">
+      <section aria-label="Editor de código" className="flex h-full min-h-0 min-w-0 flex-col overflow-hidden rounded-lg border border-gray-200 bg-white shadow-lg dark:border-gray-800 dark:bg-gray-900">
+        {editorContent}
+      </section>
+    </Panel>
+  )
+
+  const terminalPanel = (
+    <Panel key="terminal" defaultSize={40} minSize={20} className="flex min-h-0 min-w-0 flex-col">
+      <section aria-label="Terminal de saída" className="h-full min-h-0 min-w-0 overflow-hidden rounded-lg border border-gray-200 bg-white shadow-lg dark:border-gray-800 dark:bg-gray-900">
+        {terminalContent}
+      </section>
+    </Panel>
+  )
+
+  const panelSeparator = (
+    <Separator className={`relative z-10 shrink-0 bg-transparent transition-colors hover:bg-blue-400/20 dark:hover:bg-blue-600/20 ${panelOrientation === 'vertical' ? 'cursor-row-resize' : 'cursor-col-resize'} group`}>
+      <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
+        <div className={`${panelOrientation === 'vertical' ? 'h-0.5 w-10' : 'h-10 w-0.5'} rounded-full bg-gray-300 transition-colors group-hover:bg-blue-500 dark:bg-gray-700 dark:group-hover:bg-blue-400`} />
+      </div>
+    </Separator>
+  )
 
   return (
     <div className={`min-h-screen bg-gray-50 dark:bg-gray-950 transition-colors ${isZenMode ? 'zen-mode' : ''}`}>
@@ -1013,27 +1118,17 @@ export default function Home() {
       {/* Header */}
       {(!isZenMode || !isZenMounted) && (
         <header className="sticky top-0 z-50 bg-white/95 dark:bg-gray-900/95 backdrop-blur-md border-b border-gray-200/50 dark:border-gray-800/50 shadow-sm overflow-visible">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 overflow-visible">
+        <div className="mx-auto w-full max-w-7xl overflow-visible px-4 sm:px-6 lg:max-w-[1440px] lg:px-8 2xl:max-w-[1720px] 2xl:px-10">
           <div className="flex items-center justify-between h-16 overflow-visible">
               {/* Logo e Título */}
-              <div className="flex items-center gap-2 sm:gap-3 group min-w-0">
-                <div className="relative flex-shrink-0">
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img
-                src="/logo.png"
-                alt="Interpretador Python Web - Execute código Python no navegador"
-                    className="h-8 sm:h-9 w-auto object-contain transition-transform duration-300 group-hover:scale-110"
-                    width={36}
-                    height={36}
-                  />
-                  <div className="absolute inset-0 bg-blue-500/20 rounded-lg blur-xl opacity-0 group-hover:opacity-100 transition-opacity duration-300 -z-10" />
-                </div>
-                <div className="flex flex-col min-w-0">
-                  <h1 className="text-base sm:text-lg font-bold text-gray-900 dark:text-gray-100 leading-tight truncate">
-                Interpretador Python Web
-              </h1>
+              <div className="flex min-w-0 items-center">
+                <div className="flex min-w-0 flex-col">
+                  <h1 className="truncate text-base font-semibold leading-tight tracking-tight text-gray-800 dark:text-gray-100 sm:text-lg">
+                    <span>Interpreta</span>{' '}
+                    <span className="font-bold text-blue-600 dark:text-blue-400">Python</span>
+                  </h1>
                   <span className="text-xs text-gray-500 dark:text-gray-400 hidden lg:inline">
-                    Execute código Python no navegador
+                    Aprenda programando no navegador
                   </span>
             </div>
               </div>
@@ -1099,7 +1194,7 @@ export default function Home() {
               <button
                 onClick={() => setIsAboutModalOpen(true)}
                     className="relative p-2 sm:p-2.5 text-gray-600 dark:text-gray-400 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800 hover:text-gray-900 dark:hover:text-gray-200 transition-all duration-200 group"
-                    title="Sobre o Interpretador Python Web (F1)"
+                    title="Sobre o Interpreta Python (F1)"
                 aria-label="Sobre"
               >
                 <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -1118,7 +1213,7 @@ export default function Home() {
       )}
 
       {/* Main Content */}
-      <main className={`relative ${isZenMode ? 'max-w-full mx-0 px-0 py-0' : 'max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6'}`}>
+      <main className={`relative ${isZenMode ? 'max-w-full mx-0 px-0 py-0' : 'mx-auto w-full max-w-7xl px-4 py-6 sm:px-6 lg:max-w-[1440px] lg:px-8 2xl:max-w-[1720px] 2xl:px-10'}`}>
         {/* Loading Screen Overlay - apenas em hard reload ou primeira carga */}
         {isClient && loading && showLoadingScreen && (
           <LoadingScreen progress={progress} stage={stage} />
@@ -1146,47 +1241,45 @@ export default function Home() {
         ) : (
           <div className={`space-y-4 transition-smooth ${isZenMode ? 'h-screen flex flex-col' : ''} ${loading ? 'opacity-0 pointer-events-none' : 'opacity-100'}`}>
             {!isZenMode && (
-              <WorkspaceHub
-                projects={projectWorkspace.projects}
-                activeProjectId={projectWorkspace.activeProjectId}
-                mode={workspaceMode}
-                isReady={projectWorkspace.isReady}
-                isBusy={isExecuting || isResettingWorkspace || isResettingEnvironment || loading || !pyodide || !projectWorkspace.isReady}
-                lastBackupAt={lastBackupAt}
-                packages={workspacePackages}
-                storageError={backupError ?? projectWorkspace.storageError}
-                onSelectProject={projectWorkspace.selectProject}
-                onCreateProject={projectWorkspace.createProject}
-                onDuplicateProject={projectWorkspace.duplicateProject}
-                onRenameProject={projectWorkspace.renameProject}
-                onDeleteProject={projectWorkspace.deleteProject}
-                onExportProject={exportProject}
-                onDeleteBackup={deleteWorkspaceBackup}
-                onImportProject={importProject}
-                onModeChange={changeWorkspaceMode}
-                onOpenLearning={() => setIsLearningPathOpen(true)}
-                onOpenHistory={() => setIsExecutionHistoryOpen(true)}
-                onResetWorkspace={requestWorkspaceReset}
-              />
-            )}
-
-            {/* Ações principais */}
-            {!isZenMode && (
-              <ActionToolbar
-                onRun={runActiveEditor}
-                onStop={stopExecution}
-                onNewTab={createNewTab}
-                onImport={importCode}
-                onExport={exportCurrentTab}
-                onShare={shareCode}
-                onOpenCloud={() => setIsCloudSyncOpen(true)}
-                onToggleFiles={() => setIsFileSystemOpen((open) => !open)}
-                onOpenPackages={() => setIsPackageManagerOpen(true)}
-                onOpenCommandPalette={() => setIsCommandPaletteOpen(true)}
-                isExecuting={isExecuting}
-                isDisabled={loading || !pyodide || isResettingWorkspace}
-                isFileSystemOpen={isFileSystemOpen}
-              />
+              <section aria-label="Workspace e ações do editor" className="relative z-20 overflow-visible rounded-xl border border-gray-200 bg-white shadow-sm dark:border-gray-800 dark:bg-gray-900">
+                <WorkspaceHub
+                  projects={projectWorkspace.projects}
+                  activeProjectId={projectWorkspace.activeProjectId}
+                  mode={workspaceMode}
+                  isReady={projectWorkspace.isReady}
+                  isBusy={isExecuting || isResettingWorkspace || isResettingEnvironment || loading || !pyodide || !projectWorkspace.isReady}
+                  lastBackupAt={lastBackupAt}
+                  packages={workspacePackages}
+                  storageError={backupError ?? projectWorkspace.storageError}
+                  onSelectProject={projectWorkspace.selectProject}
+                  onCreateProject={projectWorkspace.createProject}
+                  onDuplicateProject={projectWorkspace.duplicateProject}
+                  onRenameProject={projectWorkspace.renameProject}
+                  onDeleteProject={projectWorkspace.deleteProject}
+                  onExportProject={exportProject}
+                  onDeleteBackup={deleteWorkspaceBackup}
+                  onImportProject={importProject}
+                  onModeChange={changeWorkspaceMode}
+                  onOpenLearning={() => setIsLearningPathOpen(true)}
+                  onOpenHistory={() => setIsExecutionHistoryOpen(true)}
+                  onResetWorkspace={requestWorkspaceReset}
+                />
+                <ActionToolbar
+                  onRun={runActiveEditor}
+                  onStop={stopExecution}
+                  onNewTab={createNewTab}
+                  onImport={importCode}
+                  onExport={exportCurrentTab}
+                  onShare={shareCode}
+                  onOpenCloud={() => setIsCloudSyncOpen(true)}
+                  onToggleFiles={() => setIsFileSystemOpen((open) => !open)}
+                  onOpenPackages={() => setIsPackageManagerOpen(true)}
+                  onOpenCommandPalette={() => setIsCommandPaletteOpen(true)}
+                  isExecuting={isExecuting}
+                  isDisabled={loading || !pyodide || isResettingWorkspace}
+                  isFileSystemOpen={isFileSystemOpen}
+                />
+              </section>
             )}
 
             {!isZenMode && !loading && <PersistenceNotice onExport={exportCurrentTab} />}
@@ -1196,55 +1289,10 @@ export default function Home() {
               <div className={isZenMode ? 'flex-1 h-full' : 'w-full'}>
                 {isZenMode ? (
                   // Modo Zen: apenas o editor em tela cheia
-                  <div className="h-full flex flex-col bg-white dark:bg-gray-900 relative transition-smooth">
-                    {loading ? (
-                      <EditorSkeleton />
-                    ) : (
-                      <>
-                        <EditorTabs
-                          tabs={tabs}
-                          activeTabId={activeTabId}
-                          onTabClick={setActiveTabId}
-                          onTabClose={closeTab}
-                          onNewTab={createNewTab}
-                          onImport={importCode}
-                          onExportCurrent={exportCurrentTab}
-                          onExportAll={exportAllTabs}
-                          onShare={shareCode}
-                          fontSize={fontSize}
-                          onFontSizeChange={handleFontSizeChange}
-                        />
-                        <div className="flex-1 h-full min-h-0">
-                          {workspaceMode === 'notebook' ? (
-                            <NotebookEditor
-                              cells={notebookCells}
-                              onChange={setNotebookCells}
-                              onRunCell={runNotebookCell}
-                              onSelectCell={selectNotebookCell}
-                              isExecuting={isExecuting}
-                              isDisabled={loading || !pyodide || isResettingWorkspace}
-                              fontSize={fontSize}
-                            />
-                          ) : (
-                            <PythonEditor
-                              code={activeTab.code}
-                              onChange={(newCode) => {
-                                updateTabCode(activeTabId, newCode)
-                                clearErrorLine()
-                              }}
-                              disabled={loading || isExecuting}
-                              fileName={activeTab.name}
-                              errorLine={errorLine}
-                              errorFocusRequest={errorFocusRequest}
-                              onRun={executeCode}
-                              fontSize={fontSize}
-                            />
-                          )}
-                        </div>
-                      </>
-                    )}
+                  <div className="relative flex h-full min-h-0 flex-col bg-white transition-smooth dark:bg-gray-900">
+                    {editorContent}
                     {/* Zen Mode Overlay */}
-                    <div className="absolute bottom-6 right-6 flex flex-col items-end gap-2 z-50">
+                    <div className="absolute bottom-[max(env(safe-area-inset-bottom),1rem)] right-[max(env(safe-area-inset-right),1rem)] z-50 flex flex-col items-end gap-2">
                       <div className="text-xs text-gray-500 dark:text-gray-400 bg-white/80 dark:bg-gray-800/80 backdrop-blur px-2 py-1 rounded shadow-sm">
                         Mais opções (Ctrl + P)
                       </div>
@@ -1260,8 +1308,7 @@ export default function Home() {
                     </div>
                   </div>
                 ) : (
-                  // Layout normal com painéis redimensionáveis
-                  <div className="flex h-[calc(100dvh-14rem)] min-h-[360px] w-full gap-0 sm:min-h-[480px] lg:min-h-[600px]">
+                  <div className="w-full">
                     {/* FileSystem Sidebar */}
                     {isFileSystemOpen && (
                       <>
@@ -1284,9 +1331,57 @@ export default function Home() {
                         </div>
                       </>
                     )}
-                    {/* Botões fixos na parede esquerda para Sistema de Arquivos e Gerenciador de Pacotes */}
+
+                    {isCompactScreen && (
+                      <section ref={mobileWorkbenchRef} aria-label="Área de trabalho" className="scroll-mt-20 flex h-[68dvh] min-h-[320px] max-h-[760px] w-full flex-col overflow-hidden rounded-xl border border-gray-200 bg-white shadow-lg dark:border-gray-800 dark:bg-gray-900">
+                        <div role="group" aria-label="Alternar entre editor e terminal" className="grid grid-cols-2 gap-1 border-b border-gray-200 bg-gray-50 p-1.5 dark:border-gray-800 dark:bg-gray-950">
+                          <button
+                            type="button"
+                            id="mobile-editor-tab"
+                            aria-pressed={mobileWorkspaceView === 'editor'}
+                            aria-controls="mobile-editor-panel"
+                            onClick={() => setMobileWorkspaceView('editor')}
+                            className={`min-h-10 rounded-lg px-3 text-sm font-semibold transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500 ${mobileWorkspaceView === 'editor' ? 'bg-blue-600 text-white shadow-sm' : 'text-gray-600 hover:bg-white dark:text-gray-300 dark:hover:bg-gray-800'}`}
+                          >
+                            Editor <span className="ml-1 inline-block max-w-28 truncate align-bottom text-xs font-normal opacity-80">{activeTab.name}</span>
+                          </button>
+                          <button
+                            type="button"
+                            id="mobile-terminal-tab"
+                            aria-pressed={mobileWorkspaceView === 'terminal'}
+                            aria-controls="mobile-terminal-panel"
+                            aria-label={terminalOutput ? 'Terminal, saída disponível' : 'Terminal'}
+                            onClick={() => setMobileWorkspaceView('terminal')}
+                            className={`min-h-10 rounded-lg px-3 text-sm font-semibold transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500 ${mobileWorkspaceView === 'terminal' ? 'bg-blue-600 text-white shadow-sm' : 'text-gray-600 hover:bg-white dark:text-gray-300 dark:hover:bg-gray-800'}`}
+                          >
+                            Terminal{terminalOutput ? <span className="ml-1.5 inline-block h-1.5 w-1.5 rounded-full bg-emerald-400 align-middle" aria-hidden="true" /> : null}
+                          </button>
+                        </div>
+                        <div
+                          id="mobile-editor-panel"
+                          role="tabpanel"
+                          aria-labelledby="mobile-editor-tab"
+                          className={`${mobileWorkspaceView === 'editor' ? 'flex' : 'hidden'} min-h-0 min-w-0 flex-1 flex-col overflow-hidden`}
+                        >
+                          {editorContent}
+                        </div>
+                        <div
+                          id="mobile-terminal-panel"
+                          role="tabpanel"
+                          aria-labelledby="mobile-terminal-tab"
+                          className={`${mobileWorkspaceView === 'terminal' ? 'flex' : 'hidden'} min-h-0 min-w-0 flex-1 overflow-hidden`}
+                        >
+                          {terminalContent}
+                        </div>
+                      </section>
+                    )}
+
+                    {/* Layout redimensionável em tablets e desktops */}
+                    {!isCompactScreen && (
+                    <div className="hidden h-[clamp(380px,calc(100dvh_-_17rem),900px)] min-h-0 w-full gap-0 md:flex">
+                    {/* Atalhos laterais ficam ocultos em celulares; as ações também estão na barra superior. */}
                     {!isFileSystemOpen && (
-                      <div className="fixed left-0 top-1/2 -translate-y-1/2 z-30 flex flex-col gap-2">
+                      <div className="fixed left-0 top-1/2 z-30 hidden -translate-y-1/2 flex-col gap-2 md:flex">
                         <button
                           onClick={() => setIsFileSystemOpen(true)}
                           className="bg-gray-800 dark:bg-gray-900 text-white p-2 rounded-r-lg shadow-lg hover:bg-gray-700 dark:hover:bg-gray-800 transition-all hover:scale-105 border-l-2 border-transparent hover:border-blue-500"
@@ -1317,123 +1412,14 @@ export default function Home() {
                     )}
                     <Group
                       orientation={panelOrientation}
-                      className="flex-1"
+                      className="min-h-0 min-w-0 flex-1"
                     >
-                    {(layout === 'top' || layout === 'left') && (
-                      <>
-                        <Panel defaultSize={50} minSize={20} className="flex flex-col">
-                          <div className="h-full bg-white dark:bg-gray-900 rounded-lg shadow-lg border border-gray-200 dark:border-gray-800 overflow-hidden flex flex-col transition-smooth">
-                            <div className="flex-1 min-h-0 flex flex-col">
-                              {loading ? (
-                                <TerminalSkeleton />
-                              ) : (
-                                <OutputTerminal
-                                  output={terminalOutput}
-                                  isError={terminalHasError}
-                                  errorLine={errorLine}
-                                  isLoading={false}
-                                  isWaitingInput={isWaitingInput}
-                                  inputPrompt={inputPrompt}
-                                  onInputSubmit={onInputSubmit}
-                                  onGoToError={focusErrorLine}
-                                  onClear={clearTerminal}
-                                  onNotify={notify}
-                                  plots={terminalPlots}
-                                />
-                              )}
-                            </div>
-                          </div>
-                        </Panel>
-                        <Separator className={`bg-transparent hover:bg-blue-400/20 dark:hover:bg-blue-600/20 transition-colors ${panelOrientation === 'vertical' ? 'cursor-row-resize' : 'cursor-col-resize'} relative group`}>
-                          <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-                            <div className="w-0.5 h-full bg-gray-300 dark:bg-gray-700 group-hover:bg-blue-500 dark:group-hover:bg-blue-400 transition-colors" />
-                          </div>
-                        </Separator>
-                      </>
+                      {terminalFirst ? terminalPanel : editorPanel}
+                      {panelSeparator}
+                      {terminalFirst ? editorPanel : terminalPanel}
+                    </Group>
+                    </div>
                     )}
-                        <Panel defaultSize={50} minSize={20} className="flex flex-col">
-                          <div className="h-full bg-white dark:bg-gray-900 rounded-lg shadow-lg border border-gray-200 dark:border-gray-800 overflow-hidden flex flex-col transition-smooth">
-                            {loading ? (
-                              <EditorSkeleton />
-                            ) : (
-                              <>
-                                <EditorTabs
-                                  tabs={tabs}
-                                  activeTabId={activeTabId}
-                                  onTabClick={setActiveTabId}
-                                  onTabClose={closeTab}
-                                  onNewTab={createNewTab}
-                                  onImport={importCode}
-                                  onExportCurrent={exportCurrentTab}
-                                  onExportAll={exportAllTabs}
-                                  onShare={shareCode}
-                                  fontSize={fontSize}
-                                  onFontSizeChange={handleFontSizeChange}
-                                />
-                                <div className="flex-1 min-h-0 overflow-hidden">
-                                  {workspaceMode === 'notebook' ? (
-                                    <NotebookEditor
-                                      cells={notebookCells}
-                                      onChange={setNotebookCells}
-                                      onRunCell={runNotebookCell}
-                                      onSelectCell={selectNotebookCell}
-                                      isExecuting={isExecuting}
-                                      isDisabled={loading || !pyodide}
-                                      fontSize={fontSize}
-                                    />
-                                  ) : (
-                                    <PythonEditor
-                                      code={activeTab.code}
-                                      onChange={(newCode) => {
-                                        updateTabCode(activeTabId, newCode)
-                                        clearErrorLine()
-                                      }}
-                                      disabled={loading || isExecuting}
-                                      fileName={activeTab.name}
-                                      errorLine={errorLine}
-                                      errorFocusRequest={errorFocusRequest}
-                                      onRun={executeCode}
-                                      fontSize={fontSize}
-                                    />
-                                  )}
-                                </div>
-                              </>
-                            )}
-                          </div>
-                        </Panel>
-                    {(layout === 'bottom' || layout === 'right') && (
-                      <>
-                        <Separator className={`bg-transparent hover:bg-blue-400/20 dark:hover:bg-blue-600/20 transition-colors ${panelOrientation === 'vertical' ? 'cursor-row-resize' : 'cursor-col-resize'} relative group`}>
-                          <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-                            <div className="h-0.5 w-full bg-gray-300 dark:bg-gray-700 group-hover:bg-blue-500 dark:group-hover:bg-blue-400 transition-colors" />
-                          </div>
-                        </Separator>
-                        <Panel defaultSize={50} minSize={20} className="flex flex-col">
-                          <div className="h-full bg-white dark:bg-gray-900 rounded-lg shadow-lg border border-gray-200 dark:border-gray-800 overflow-hidden flex flex-col transition-smooth">
-                            <div className="flex-1 min-h-0 flex flex-col">
-                              {loading ? (
-                                <TerminalSkeleton />
-                              ) : (
-                                <OutputTerminal
-                                  output={terminalOutput}
-                                  isError={terminalHasError}
-                                  errorLine={errorLine}
-                                  isLoading={false}
-                                  isWaitingInput={isWaitingInput}
-                                  inputPrompt={inputPrompt}
-                                  onInputSubmit={onInputSubmit}
-                                  onGoToError={focusErrorLine}
-                                  onClear={clearTerminal}
-                                  onNotify={notify}
-                                  plots={terminalPlots}
-                                />
-                              )}
-                            </div>
-                          </div>
-                        </Panel>
-                      </>
-                    )}
-                  </Group>
                   </div>
                 )}
               </div>
@@ -1445,7 +1431,7 @@ export default function Home() {
       {/* Footer */}
       {!isZenMode && (
       <footer className="mt-12 py-6 border-t border-gray-200 dark:border-gray-800">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+        <div className="mx-auto w-full max-w-7xl px-4 sm:px-6 lg:max-w-[1440px] lg:px-8 2xl:max-w-[1720px] 2xl:px-10">
           <div className="flex flex-col md:flex-row items-center justify-between gap-4 text-sm text-gray-600 dark:text-gray-400">
             {/* Informações do desenvolvedor */}
             <div className="flex flex-col md:flex-row items-center gap-2 md:gap-4">

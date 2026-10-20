@@ -52,6 +52,7 @@ export function PythonEditor({
   fontSize = 14,
 }: PythonEditorProps) {
   const editorRef = useRef<EditorView | null>(null)
+  const editorContainerRef = useRef<HTMLDivElement | null>(null)
   const latestSearchMatches = useRef<SearchMatch[]>([])
   const latestMatchIndex = useRef(0)
   const searchCompartment = useMemo(() => new Compartment(), [])
@@ -65,6 +66,20 @@ export function PythonEditor({
   const [wholeWord, setWholeWord] = useState(false)
   const [isDark, setIsDark] = useState(false)
   const [editorReady, setEditorReady] = useState(false)
+  const [wrapLongLines, setWrapLongLines] = useState(false)
+
+  useEffect(() => {
+    const container = editorContainerRef.current
+    if (!container || typeof ResizeObserver === 'undefined') return
+
+    const observer = new ResizeObserver(([entry]) => {
+      if (!entry) return
+      const shouldWrap = entry.contentRect.width < 560
+      setWrapLongLines((current) => current === shouldWrap ? current : shouldWrap)
+    })
+    observer.observe(container)
+    return () => observer.disconnect()
+  }, [])
 
   useEffect(() => {
     const root = document.documentElement
@@ -242,11 +257,12 @@ export function PythonEditor({
   const editorExtensions = useMemo(() => [
     python(),
     keyBindings,
+    ...(wrapLongLines ? [EditorView.lineWrapping] : []),
     EditorView.contentAttributes.of({ 'aria-label': `Editor de código Python ${fileName}`, spellcheck: 'false' }),
     searchCompartment.of([]),
     errorCompartment.of([]),
     editorTheme,
-  ], [keyBindings, fileName, searchCompartment, errorCompartment, editorTheme])
+  ], [keyBindings, wrapLongLines, fileName, searchCompartment, errorCompartment, editorTheme])
 
   const closeFindReplace = useCallback(() => {
     setFindReplaceMode(null)
@@ -270,7 +286,7 @@ export function PythonEditor({
           currentMatch={currentMatch}
         />
       )}
-      <div className="min-h-0 flex-1 overflow-hidden">
+      <div ref={editorContainerRef} className="min-h-0 min-w-0 flex-1 overflow-hidden">
         <CodeMirror
           value={code}
           onChange={onChange}

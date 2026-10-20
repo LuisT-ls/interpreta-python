@@ -2,6 +2,7 @@
 
 import { useState, useCallback, useEffect } from 'react'
 import { logger } from '@/utils/logger'
+import { DEFAULT_STARTER_CODE, migrateStarterCode } from '@/utils/starterCode'
 
 export interface MatplotlibPlot {
   id: string
@@ -20,21 +21,6 @@ export interface EditorTab {
   plots: MatplotlibPlot[]
 }
 
-const DEFAULT_CODE = `# Bem-vindo ao Interpretador Python Web!
-# Digite seu código Python aqui e clique em "Executar Código"
-
-print("Olá, mundo!")
-print("Python está funcionando! 🐍")
-
-# Exemplo: calcular a soma de números
-numeros = [1, 2, 3, 4, 5]
-soma = sum(numeros)
-print(f"A soma de {numeros} é {soma}")
-
-# Exemplo: loop
-for i in range(3):
-    print(f"Contagem: {i}")`
-
 export function useEditorTabs() {
   // Inicialização preguiçosa para carregar do LocalStorage (apenas no cliente)
   const [tabs, setTabs] = useState<EditorTab[]>(() => {
@@ -46,6 +32,7 @@ export function useEditorTabs() {
           // Garantir que todas as abas tenham o campo plots
           return parsed.map((tab: EditorTab) => ({
             ...tab,
+            code: migrateStarterCode(tab.code),
             plots: tab.plots || [],
           }))
         }
@@ -57,7 +44,7 @@ export function useEditorTabs() {
       {
         id: '1',
         name: 'editor.py',
-        code: DEFAULT_CODE,
+        code: DEFAULT_STARTER_CODE,
         output: '',
         hasError: false,
         plots: [],
